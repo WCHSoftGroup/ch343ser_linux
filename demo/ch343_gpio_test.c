@@ -1,7 +1,7 @@
 /* 
- * ch343 gpio testing utility
+ * ch343 gpio application example
  *
- * Copyright (C) 2021 WCH Corporation.
+ * Copyright (C) 2021 WCH.
  * Author: TECH39 <zhangj@wch.cn>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -14,8 +14,7 @@
  * 
  * Update Log:
  * V1.0 - initial version
- * V1.1 - added support of CH9103M, CH9101
- *
+ * V1.1 - added support of ch344, ch9103, ch9101
  */
  
 #include <stdio.h>

@@ -1,7 +1,7 @@
 /* 
- * library of ch342/ch343/ch344/ch9101/ch9102/ch9103, etc
+ * application library of ch342/ch343/ch344/ch9101/ch9102/ch9103, etc.
  *
- * Copyright (C) 2021 WCH Corporation.
+ * Copyright (C) 2021 WCH.
  * Author: TECH39 <zhangj@wch.cn>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -14,10 +14,9 @@
  * 
  * Update Log:
  * V1.0 - initial version
- * V1.1 - added support of CH9103M, CH9101
- *
+ * V1.1 - added support of ch344, ch9103, ch9101
  */
- 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -27,8 +26,6 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include "ch343_lib.h"
-
-static const char *device = "/dev/ttyCH343USB0";
 
 /**
  * libch343_open - open tty device
@@ -58,7 +55,7 @@ int libch343_open(const char *devname)
 		return -1;
 	}
 	else
-		printf("tty device test ok.\n");
+		printf("tty device open successfully.\n");
 	
 	return fd;
 }
