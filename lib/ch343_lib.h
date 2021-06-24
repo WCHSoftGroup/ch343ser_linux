@@ -15,6 +15,7 @@ typedef enum {
 	CHIP_CH343G_AUTOBAUD,
 	CHIP_CH343K,
 	CHIP_CH343J,
+	CHIP_CH344L,
 	CHIP_CH9101UH,
 	CHIP_CH9102F,
 	CHIP_CH9102X,
@@ -28,7 +29,7 @@ typedef enum {
  * In this demo device is opened blocked, you could modify it at will.
  */
 extern int libch343_open(const char *devname);
- 
+
 /**
  * libch343_close - close tty device
  * @fd: the device handle
