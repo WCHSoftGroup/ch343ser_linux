@@ -10,10 +10,12 @@ load:
 unload:
 	rmmod ch343
 install: default
-	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/
-	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/
+	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial
+	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial
+	echo "ch343\n" >> /etc/modules
 	depmod -a
 uninstall:
+	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/ch343.ko
 	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/ch343.ko
 	depmod -a
 else

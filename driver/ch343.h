@@ -141,19 +141,22 @@ typedef enum {
 	CHIP_CH343K,
 	CHIP_CH343J,
 	CHIP_CH344L,
+	CHIP_CH344Q,
 	CHIP_CH9101UH,
 	CHIP_CH9102F,
 	CHIP_CH9102X,
 	CHIP_CH9103M,
+	CHIP_CH9143,
+	CHIP_CH347,
 } CHIPTYPE;
 
 struct ch343 {
 	struct usb_device *dev;				/* the corresponding usb device */
-	struct usb_interface *control;			/* control interface */
+	struct usb_interface *control;		/* control interface */
 	struct usb_interface *data;			/* data interface */
 	struct tty_port port;			 	/* our tty port data */
 	struct urb *ctrlurb;				/* urbs */
-	u8 *ctrl_buffer;				/* buffers of urbs */
+	u8 *ctrl_buffer;					/* buffers of urbs */
 	dma_addr_t ctrl_dma;				/* dma handles of buffers */
 	struct ch343_wb wb[CH343_NW];
 	unsigned long read_urbs_free;
@@ -162,21 +165,21 @@ struct ch343 {
 	int rx_buflimit;
 	int rx_endpoint;
 	spinlock_t read_lock;
-	int write_used;					/* number of non-empty write buffers */
+	int write_used;						/* number of non-empty write buffers */
 	int transmitting;
 	spinlock_t write_lock;
 	struct mutex mutex;
 	bool disconnected;
-	struct usb_ch343_line_coding line;		/* bits, stop, parity */
+	struct usb_ch343_line_coding line;	/* bits, stop, parity */
 	struct work_struct work;			/* work queue entry for line discipline waking up */
 	unsigned int ctrlin;				/* input control lines (DCD, DSR, RI, break, overruns) */
 	unsigned int ctrlout;				/* output control lines (DTR, RTS) */
-	struct async_icount iocount;			/* counters for control line changes */
-	struct async_icount oldcount;			/* for comparison of counter */
+	struct async_icount iocount;		/* counters for control line changes */
+	struct async_icount oldcount;		/* for comparison of counter */
 	wait_queue_head_t wioctl;			/* for ioctl */
 	unsigned int writesize;				/* max packet size for the output bulk endpoint */
-	unsigned int readsize,ctrlsize;			/* buffer sizes for freeing */
-	unsigned int minor;				/* ch343 minor number */
+	unsigned int readsize,ctrlsize;		/* buffer sizes for freeing */
+	unsigned int minor;					/* ch343 minor number */
 	unsigned char clocal;				/* termios CLOCAL */
 	unsigned int susp_count;			/* number of suspended interfaces */
 	u8 bInterval;
@@ -188,8 +191,6 @@ struct ch343 {
 	u16 idProduct;
 	u8 gpio5dir;
 };
-
-#define CDC_DATA_INTERFACE_TYPE	0x0a
 
 /* constants describing various quirks and errors */
 #define NO_UNION_NORMAL				BIT(0)
