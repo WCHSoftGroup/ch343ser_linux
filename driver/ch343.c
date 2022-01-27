@@ -221,6 +221,11 @@ static int ch343_configure(struct ch343 *ch343)
 	if (!buffer)
 		return -ENOMEM;
 
+	if (ch343->iface <= 1)
+		ch343_control_out(ch343, CMD_C1 + ch343->iface, 0, 0);
+	else if (ch343->iface <= 3)
+		ch343_control_out(ch343, CMD_C1 + 0x10 + (ch343->iface - 2), 0, 0);
+
 	r = ch343_control_in(ch343, CMD_C6, 0, 0, buffer, size);
 	if (r <= 0) {
 		r = -EINVAL;
@@ -265,6 +270,7 @@ static int ch343_configure(struct ch343 *ch343)
 		break;
 	case 0x55D6:
 		ch343->chiptype = CHIP_CH9143;
+		break;
 	case 0x55D7:
 		if (chiptype == 0x4B)
 			ch343->chiptype = CHIP_CH9103M;
