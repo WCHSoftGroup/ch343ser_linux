@@ -822,7 +822,7 @@ static int ch343_tty_write(struct tty_struct *tty,
 	return count;
 }
 
-static int ch343_tty_write_room(struct tty_struct *tty)
+static unsigned int ch343_tty_write_room(struct tty_struct *tty)
 {
 	struct ch343 *ch343 = tty->driver_data;
 	/*
@@ -832,7 +832,7 @@ static int ch343_tty_write_room(struct tty_struct *tty)
 	return ch343_wb_is_avail(ch343) ? ch343->writesize : 0;
 }
 
-static int ch343_tty_chars_in_buffer(struct tty_struct *tty)
+static unsigned int ch343_tty_chars_in_buffer(struct tty_struct *tty)
 {
 	struct ch343 *ch343 = tty->driver_data;
 	/*
@@ -1696,7 +1696,7 @@ static const struct tty_operations ch343_ops = {
 static int __init ch343_init(void)
 {
 	int retval;
-	ch343_tty_driver = alloc_tty_driver(CH343_TTY_MINORS);
+	ch343_tty_driver = tty_alloc_driver(CH343_TTY_MINORS, 0);
 	if (!ch343_tty_driver)
 		return -ENOMEM;
 	ch343_tty_driver->driver_name = "usbch343",
@@ -1713,14 +1713,14 @@ static int __init ch343_init(void)
 
 	retval = tty_register_driver(ch343_tty_driver);
 	if (retval) {
-		put_tty_driver(ch343_tty_driver);
+		tty_driver_kref_put(ch343_tty_driver);
 		return retval;
 	}
 
 	retval = usb_register(&ch343_driver);
 	if (retval) {
 		tty_unregister_driver(ch343_tty_driver);
-		put_tty_driver(ch343_tty_driver);
+		tty_driver_kref_put(ch343_tty_driver);
 		return retval;
 	}
 
@@ -1734,7 +1734,7 @@ static void __exit ch343_exit(void)
 {
 	usb_deregister(&ch343_driver);
 	tty_unregister_driver(ch343_tty_driver);
-	put_tty_driver(ch343_tty_driver);
+	tty_driver_kref_put(ch343_tty_driver);
 	idr_destroy(&ch343_minors);
 	printk(KERN_INFO KBUILD_MODNAME ": " "ch343 driver exit.\n");
 }
