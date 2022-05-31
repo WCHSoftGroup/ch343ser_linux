@@ -1,5 +1,5 @@
 /*
- * USB serial driver for USB to UART(s) chip ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9143, etc.
+ * USB serial driver for USB to UART(s) chip ch342/ch343/ch344/ch9101/ch9102/ch9103, etc.
  *
  * Copyright (C) 2021 WCH.
  * Author: TECH39 <zhangj@wch.cn>
@@ -13,8 +13,9 @@
  * Kernel version beyond 3.4.x
  * Update Log:
  * V1.0 - initial version
- * V1.1 - added support of chip ch344L, ch9101 and ch9103
- * V1.2 - added support of chip ch344Q and ch347
+ * V1.1 - added support of chip ch344, ch9101 and ch9103
+ * V1.2 - added gpio support of chip ch344
+ * V1.3 - added support of chip ch347
  *
  */
 
@@ -50,13 +51,15 @@
 #include "ch343.h"
 
 #define DRIVER_AUTHOR 			"TECH39 <zhangj@wch.cn>"
-#define DRIVER_DESC 			"USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9143, etc."
-#define VERSION_DESC 			"V1.2 On 2022.01.07"
+#define DRIVER_DESC 			"USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103, etc."
+#define VERSION_DESC 			"V1.3 On 2022.05.27"
 
 #define IOCTL_MAGIC 'W'
+#define IOCTL_CMD_GPIOENABLE 	_IOW(IOCTL_MAGIC, 0x80, u16)
+#define IOCTL_CMD_GPIOSET		_IOW(IOCTL_MAGIC, 0x81, u16)
+#define IOCTL_CMD_GPIOGET		_IOWR(IOCTL_MAGIC, 0x82, u16)
+#define IOCTL_CMD_GPIOINFO		_IOWR(IOCTL_MAGIC, 0x83, u16)
 #define IOCTL_CMD_GETCHIPTYPE   _IOR(IOCTL_MAGIC, 0x84, u16)
-#define IOCTL_CMD_CTRLIN 		_IOWR(IOCTL_MAGIC, 0x90, u16)
-#define IOCTL_CMD_CTRLOUT		_IOW(IOCTL_MAGIC, 0x91, u16)
 
 static struct usb_driver ch343_driver;
 static struct tty_driver *ch343_tty_driver;
@@ -167,7 +170,7 @@ static int ch343_control_in(struct ch343 *ch343,
 
     usb_autopm_put_interface(ch343->control);
 
-	return retval;
+	return retval < 0 ? retval : 0;
 }
 
 static inline int ch343_set_control(struct ch343 *ch343, int control)
@@ -180,6 +183,11 @@ static inline int ch343_set_control(struct ch343 *ch343, int control)
            		~control, 0x0000);
 	else
 		return -1;
+}
+
+static inline int ch343_set_line(struct ch343 *ch343, struct usb_cdc_line_coding *line)
+{
+	return 0;
 }
 
 static int ch343_get_status(struct ch343 *ch343)
@@ -221,16 +229,9 @@ static int ch343_configure(struct ch343 *ch343)
 	if (!buffer)
 		return -ENOMEM;
 
-	if (ch343->iface <= 1)
-		ch343_control_out(ch343, CMD_C1 + ch343->iface, 0, 0);
-	else if (ch343->iface <= 3)
-		ch343_control_out(ch343, CMD_C1 + 0x10 + (ch343->iface - 2), 0, 0);
-
 	r = ch343_control_in(ch343, CMD_C6, 0, 0, buffer, size);
-	if (r <= 0) {
-		r = -EINVAL;
+	if (r < 0)
 		goto out;
-	}
 
 	chiptype = buffer[1];
 
@@ -239,7 +240,7 @@ static int ch343_configure(struct ch343 *ch343)
 		if (chiptype == 0x48)
 			ch343->chiptype = CHIP_CH342F;
 		else if (chiptype == 0x41)
-			ch343->chiptype = CHIP_CH342GJK;
+			ch343->chiptype = CHIP_CH342K;
 		break;
 	case 0x55D3:
 		if (chiptype == 0x08)
@@ -263,14 +264,6 @@ static int ch343_configure(struct ch343 *ch343)
 		else
 			ch343->chiptype = CHIP_CH344Q;
 		break;
-	case 0x55DA:
-	case 0x55DB:
-	case 0x55DD:
-		ch343->chiptype = CHIP_CH347;
-		break;
-	case 0x55D6:
-		ch343->chiptype = CHIP_CH9143;
-		break;
 	case 0x55D7:
 		if (chiptype == 0x4B)
 			ch343->chiptype = CHIP_CH9103M;
@@ -278,6 +271,11 @@ static int ch343_configure(struct ch343 *ch343)
 	case 0x55D8:
 		if (chiptype == 0x08)
 			ch343->chiptype = CHIP_CH9101UH;
+		break;
+	case 0x55DA:
+	case 0x55DB:
+	case 0x55DD:
+		ch343->chiptype = CHIP_CH347T;
 		break;
 	default:
 		break;
@@ -289,7 +287,7 @@ static int ch343_configure(struct ch343 *ch343)
 			goto out;
 	}
 
-	dev_info(&ch343->data->dev,
+	dev_dbg(&ch343->data->dev,
 		"%s - chip hver : 0x%2x, sver : 0x%2x, chip : %d\n",
 		__func__, buffer[0], buffer[1], ch343->chiptype);
 out:
@@ -393,7 +391,6 @@ static void ch343_update_status(struct ch343 *ch343,
 		status = ~data[len - 1] & CH343_CTI_ST;
 		if (ch343->chiptype == CHIP_CH344L)
 			status &= CH343_CTI_C;
-		// added........
 
 		if (!ch343->clocal && (ch343->ctrlin & status & CH343_CTI_DC)) {
 			tty_port_tty_hangup(&ch343->port, false);
@@ -933,12 +930,108 @@ static int ch343_tty_tiocmset(struct tty_struct *tty,
 
 	newctrl = (newctrl & ~clear) | set;
 
-	if (ch343->ctrlout == newctrl)
+	if (ch343->ctrlout == newctrl) {
 		return 0;
+	}
+
 	return ch343_set_control(ch343, ch343->ctrlout = newctrl);
 }
 
-static int get_serial_usage(struct ch343 *ch343,
+static int ch343_get_serial_info(struct ch343 *ch343, struct serial_struct __user *info)
+{
+	struct serial_struct tmp;
+
+	if (!info)
+		return -EINVAL;
+
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.flags = ASYNC_LOW_LATENCY;
+	tmp.xmit_fifo_size = ch343->writesize;
+	tmp.baud_base = le32_to_cpu(ch343->line.dwDTERate);
+	tmp.close_delay	= ch343->port.close_delay / 10;
+	tmp.closing_wait = ch343->port.closing_wait == ASYNC_CLOSING_WAIT_NONE ?
+				ASYNC_CLOSING_WAIT_NONE :
+				ch343->port.closing_wait / 10;
+
+	if (copy_to_user(info, &tmp, sizeof(tmp)))
+		return -EFAULT;
+	else
+		return 0;
+}
+
+static int ch343_set_serial_info(struct ch343 *ch343,
+				struct serial_struct __user *newinfo)
+{
+	struct serial_struct new_serial;
+	unsigned int closing_wait, close_delay;
+	int retval = 0;
+
+	if (copy_from_user(&new_serial, newinfo, sizeof(new_serial)))
+		return -EFAULT;
+
+	close_delay = new_serial.close_delay * 10;
+	closing_wait = new_serial.closing_wait == ASYNC_CLOSING_WAIT_NONE ?
+			ASYNC_CLOSING_WAIT_NONE : new_serial.closing_wait * 10;
+
+	mutex_lock(&ch343->port.mutex);
+
+	if (!capable(CAP_SYS_ADMIN)) {
+		if ((close_delay != ch343->port.close_delay) ||
+		    (closing_wait != ch343->port.closing_wait))
+			retval = -EPERM;
+		else
+			retval = -EOPNOTSUPP;
+	} else {
+		ch343->port.close_delay  = close_delay;
+		ch343->port.closing_wait = closing_wait;
+	}
+
+	mutex_unlock(&ch343->port.mutex);
+	return retval;
+}
+
+static int ch343_wait_serial_change(struct ch343 *ch343, unsigned long arg)
+{
+	int rv = 0;
+	DECLARE_WAITQUEUE(wait, current);
+	struct async_icount old, new;
+
+	do {
+		spin_lock_irq(&ch343->read_lock);
+		old = ch343->oldcount;
+		new = ch343->iocount;
+		ch343->oldcount = new;
+		spin_unlock_irq(&ch343->read_lock);
+
+		if ((arg & TIOCM_DSR) &&
+			old.dsr != new.dsr)
+			break;
+		if ((arg & TIOCM_CD)  &&
+			old.dcd != new.dcd)
+			break;
+		if ((arg & TIOCM_RI) &&
+			old.rng != new.rng)
+			break;
+
+		add_wait_queue(&ch343->wioctl, &wait);
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule();
+		remove_wait_queue(&ch343->wioctl, &wait);
+		if (ch343->disconnected) {
+			if (arg & TIOCM_CD)
+				break;
+			else
+				rv = -ENODEV;
+		} else {
+			if (signal_pending(current))
+				rv = -ERESTARTSYS;
+		}
+	} while (!rv);
+
+	return rv;
+}
+
+static int ch343_get_serial_usage(struct ch343 *ch343,
 			    struct serial_icounter_struct __user *count)
 {
 	struct serial_icounter_struct icount;
@@ -964,10 +1057,23 @@ static int ch343_tty_ioctl(struct tty_struct *tty,
 {
 	struct ch343 *ch343 = tty->driver_data;
 	int rv = 0;
+
 	unsigned long arg1;
 	unsigned long arg2;
 	unsigned long arg3;
+	u32 inarg;
+	u16 inargH, inargL;
+	u32 __user *argval = (u32 __user *)arg;
+
+	u8 gbit1, gbit2, gbit3;
+	u8 gopbit1, gopbit2;
+	u8 gen1, gd1, gen2, gd2, gen3, gd3;
+	u8 gv1, gv2, gv3;
+
+	u16 gev, gdv, gv;
+	u16 value, index;
 	u8 *buffer;
+	int i;
 
 	dev_dbg(&ch343->control->dev, "%s\n", __func__);
 
@@ -977,33 +1083,956 @@ static int ch343_tty_ioctl(struct tty_struct *tty,
 
 	switch (cmd) {
 	case TIOCGSERIAL: /* gets serial port data */
+		rv = ch343_get_serial_info(ch343, (struct serial_struct __user *) arg);
 		break;
 	case TIOCSSERIAL:
+		rv = ch343_set_serial_info(ch343, (struct serial_struct __user *) arg);
 		break;
 	case TIOCMIWAIT:
+		rv = usb_autopm_get_interface(ch343->control);
+		if (rv < 0) {
+			rv = -EIO;
+			break;
+		}
+		rv = ch343_wait_serial_change(ch343, arg);
+		usb_autopm_put_interface(ch343->control);
 		break;
 	case TIOCGICOUNT:
-		rv = get_serial_usage(ch343, (struct serial_icounter_struct __user *) arg);
+		rv = ch343_get_serial_usage(ch343, (struct serial_icounter_struct __user *) arg);
 		break;
-	case IOCTL_CMD_CTRLIN:
-		get_user(arg1, (long __user *)arg);
-		get_user(arg2, ((long __user *)arg + 1));
-		rv = ch343_control_in(ch343, (u8)arg1, 0x00,
-					0x00, buffer, 0x08);
-		if (rv <= 0) {
-			rv = -EINVAL;
-			goto out;
-		}
-		rv = copy_to_user((char __user *)arg2, (char *)buffer, rv);
-		break;
-	case IOCTL_CMD_CTRLOUT:
+	case IOCTL_CMD_GPIOINFO:
 		get_user(arg1, (long __user *)arg);
 		get_user(arg2, ((long __user *)arg + 1));
 		get_user(arg3, ((long __user *)arg + 2));
-		rv = ch343_control_out(ch343, (u8)arg1, (u16)arg2, (u16)arg3);
+
+		rv = ch343_control_in(ch343, CMD_C11, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		gen1 = buffer[0];
+		gen2 = buffer[1];
+		gen3 = buffer[2];
+		rv = ch343_control_in(ch343, CMD_C10, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gv1 = buffer[2];
+			gv2 = buffer[3];
+		} else {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gd3 = buffer[2];
+			gv1 = buffer[3];
+			gv2 = buffer[4];
+			gv3 = buffer[5];
+		}
+		gev = gdv = gv = 0x00;
+
+		if (ch343->chiptype == CHIP_CH9102X) {
+			if (gen2 & BIT(3))
+				gev |= BIT(0);
+			if (gen2 & BIT(5))
+				gev |= BIT(1);
+			if (gen2 & BIT(1))
+				gev |= BIT(2);
+			if (gen2 & BIT(7))
+				gev |= BIT(3);
+			if (gen3 & BIT(0))
+				gev |= BIT(5);
+			if (gen2 & BIT(2))
+				gev |= BIT(6);
+
+			if (gd2 & BIT(3))
+				gdv |= BIT(0);
+			if (gd2 & BIT(5))
+				gdv |= BIT(1);
+			if (gd2 & BIT(1))
+				gdv |= BIT(2);
+			if (gd2 & BIT(7))
+				gdv |= BIT(3);
+			if (gd3 & BIT(0))
+				gdv |= BIT(5);
+			if (gd2 & BIT(2))
+				gdv |= BIT(6);
+
+			if (gv2 & BIT(3))
+				gv |= BIT(0);
+			if (gv2 & BIT(5))
+				gv |= BIT(1);
+			if (gv2 & BIT(1))
+				gv |= BIT(2);
+			if (gv2 & BIT(7))
+				gv |= BIT(3);
+			if (gv3 & BIT(0))
+				gv |= BIT(5);
+			if (gv2 & BIT(2))
+				gv |= BIT(6);
+		} else if (ch343->chiptype == CHIP_CH9102F) {
+			if (gen2 & BIT(1))
+				gev |= BIT(0);
+			if (gen2 & BIT(7))
+				gev |= BIT(1);
+			if (gen2 & BIT(4))
+				gev |= BIT(2);
+			if (gen2 & BIT(6))
+				gev |= BIT(3);
+			if (gen2 & BIT(3))
+				gev |= BIT(4);
+
+			if (gd2 & BIT(1))
+				gdv |= BIT(0);
+			if (gd2 & BIT(7))
+				gdv |= BIT(1);
+			if (gd2 & BIT(4))
+				gdv |= BIT(2);
+			if (gd2 & BIT(6))
+				gdv |= BIT(3);
+			if (gd2 & BIT(3))
+				gdv |= BIT(4);
+
+			if (gv2 & BIT(1))
+				gv |= BIT(0);
+			if (gv2 & BIT(7))
+				gv |= BIT(1);
+			if (gv2 & BIT(4))
+				gv |= BIT(2);
+			if (gv2 & BIT(6))
+				gv |= BIT(3);
+			if (gv2 & BIT(3))
+				gv |= BIT(4);
+		} else if (ch343->chiptype == CHIP_CH9103M) {
+			if (gen1 & BIT(3))
+				gev |= BIT(0);
+			if (gen1 & BIT(2))
+				gev |= BIT(1);
+			if (gen3 & BIT(2))
+				gev |= BIT(2);
+			if (gen2 & BIT(6))
+				gev |= BIT(3);
+			if (gen1 & BIT(0))
+				gev |= BIT(4);
+			if (gen1 & BIT(6))
+				gev |= BIT(5);
+			if (gen2 & BIT(3))
+				gev |= BIT(6);
+			if (gen2 & BIT(5))
+				gev |= BIT(7);
+			if (gen3 & BIT(0))
+				gev |= BIT(8);
+			if (gen2 & BIT(2))
+				gev |= BIT(9);
+			if (gen1 & BIT(5))
+				gev |= BIT(10);
+			if (gen2 & BIT(4))
+				gev |= BIT(11);
+
+			if (gd1 & BIT(3))
+				gdv |= BIT(0);
+			if (gd1 & BIT(2))
+				gdv |= BIT(1);
+			if (gd3 & BIT(2))
+				gdv |= BIT(2);
+			if (gd2 & BIT(6))
+				gdv |= BIT(3);
+			if (gd1 & BIT(0))
+				gdv |= BIT(4);
+			if (gd1 & BIT(6))
+				gdv |= BIT(5);
+			if (gd2 & BIT(3))
+				gdv |= BIT(6);
+			if (gd2 & BIT(5))
+				gdv |= BIT(7);
+			if (gd3 & BIT(0))
+				gdv |= BIT(8);
+			if (gd2 & BIT(2))
+				gdv |= BIT(9);
+			if (gd1 & BIT(5))
+				gdv |= BIT(10);
+			if (gd2 & BIT(4))
+				gdv |= BIT(11);
+
+			if (gv1 & BIT(3))
+				gv |= BIT(0);
+			if (gv1 & BIT(2))
+				gv |= BIT(1);
+			if (gv3 & BIT(2))
+				gv |= BIT(2);
+			if (gv2 & BIT(6))
+				gv |= BIT(3);
+			if (gv1 & BIT(0))
+				gv |= BIT(4);
+			if (gv1 & BIT(6))
+				gv |= BIT(5);
+			if (gv2 & BIT(3))
+				gv |= BIT(6);
+			if (gv2 & BIT(5))
+				gv |= BIT(7);
+			if (gv3 & BIT(0))
+				gv |= BIT(8);
+			if (gv2 & BIT(2))
+				gv |= BIT(9);
+			if (gv1 & BIT(5))
+				gv |= BIT(10);
+			if (gv2 & BIT(4))
+				gv |= BIT(11);
+		} else if (ch343->chiptype == CHIP_CH9101UH) {
+			if (gen3 & BIT(2))
+				gev |= BIT(0);
+			if (gen3 & BIT(3))
+				gev |= BIT(1);
+			if (gen1 & BIT(3))
+				gev |= BIT(2);
+			if (gen1 & BIT(2))
+				gev |= BIT(3);
+			if (gen1 & BIT(5))
+				gev |= BIT(4);
+			if (gen2 & BIT(4))
+				gev |= BIT(6);
+
+			if (gd3 & BIT(2))
+				gdv |= BIT(0);
+			if (gd3 & BIT(3))
+				gdv |= BIT(1);
+			if (gd1 & BIT(3))
+				gdv |= BIT(2);
+			if (gd1 & BIT(2))
+				gdv |= BIT(3);
+			if (gd1 & BIT(5))
+				gdv |= BIT(4);
+			if (gd2 & BIT(4))
+				gdv |= BIT(6);
+
+			if (gv3 & BIT(2))
+				gv |= BIT(0);
+			if (gv3 & BIT(3))
+				gv |= BIT(1);
+			if (gv1 & BIT(3))
+				gv |= BIT(2);
+			if (gv1 & BIT(2))
+				gv |= BIT(3);
+			if (gv1 & BIT(5))
+				gv |= BIT(4);
+			if (gv2 & BIT(4))
+				gv |= BIT(6);
+		} else if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			gev |= gen1 << 8;
+			gev |= gen2; 
+			gdv |= gd1 << 8;
+			gdv |= gd2;
+			gv |= gv1 << 8;
+			gv |= gv2;
+		} 
+
+		put_user(gev, (u16 __user *)arg1);
+		put_user(gdv, (u16 __user *)arg2);
+		put_user(gv, (u16 __user *)arg3);
+
 		break;
-	case IOCTL_CMD_GETCHIPTYPE:
-		if (put_user(ch343->chiptype, (u32 __user *)arg)) {
+	case IOCTL_CMD_GPIOENABLE:
+		if (get_user(inarg, argval)) {
+			rv = -EFAULT;
+			goto out;
+		}
+		
+		rv = ch343_control_in(ch343, CMD_C11, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		gen1 = buffer[0];
+		gen2 = buffer[1];
+		gen3 = buffer[2];
+
+		rv = ch343_control_in(ch343, CMD_C10, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gv1 = buffer[2];
+			gv2 = buffer[3];
+		} else {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gd3 = buffer[2];
+			gv1 = buffer[3];
+			gv2 = buffer[4];
+			gv3 = buffer[5];
+		}
+
+		inargH = inarg >> 16;
+		inargL = inarg;
+
+		if (ch343->chiptype == CHIP_CH9102X) {
+			if (inargH & BIT(0)) {
+				gen2 |= BIT(3);
+				if (inargL & BIT(0))
+					gd2 |= BIT(3);
+				else
+					gd2 &= ~BIT(3);
+			} else {
+				gen2 &= ~BIT(3);
+			}
+			if (inargH & BIT(1)) {
+				gen2 |= BIT(5);
+				if (inargL & BIT(1))
+					gd2 |= BIT(5);
+				else
+					gd2 &= ~BIT(5);
+			} else
+				gen2 &= ~BIT(5);
+			if (inargH & BIT(2)) {
+				gen2 |= BIT(1);
+				if (inargL & BIT(2))
+					gd2 |= BIT(1);
+				else
+					gd2 &= ~BIT(1);
+			} else
+				gen2 &= ~BIT(1);
+			if (inargH & BIT(3)) {
+				gen2 |= BIT(7);
+				if (inargL & BIT(3))
+					gd2 |= BIT(7);
+				else
+					gd2 &= ~BIT(7);
+			} else
+				gen2 &= ~BIT(7);
+			if (inargH & BIT(5)) {
+				gen3 |= BIT(0);
+				if (inargL & BIT(5))
+					gd3 |= BIT(0);
+				else
+					gd3 &= ~BIT(0);
+			} else
+				gen2 &= ~BIT(7);
+			if (inargH & BIT(6)) {
+				gen2 |= BIT(2);
+				if (inargL & BIT(6))
+					gd2 |= BIT(2);
+				else
+					gd2 &= ~BIT(2);
+			} else
+				gen2 &= ~BIT(2);
+		} else if (ch343->chiptype == CHIP_CH9102F) {
+			if (inargH & BIT(0)) {
+				gen2 |= BIT(1);
+				if (inargL & BIT(0))
+					gd2 |= BIT(1);
+				else
+					gd2 &= ~BIT(1);
+			} else
+				gen2 &= ~BIT(1);
+			if (inargH & BIT(1)) {
+				gen2 |= BIT(7);
+				if (inargL & BIT(1))
+					gd2 |= BIT(7);
+				else
+					gd2 &= ~BIT(7);
+			} else
+				gen2 &= ~BIT(7);
+			if (inargH & BIT(2)) {
+				gen2 |= BIT(4);
+				if (inargL & BIT(2))
+					gd2 |= BIT(4);
+				else
+					gd2 &= ~BIT(4);
+			} else
+				gen2 &= ~BIT(4);
+			if (inargH & BIT(3)) {
+				gen2 |= BIT(6);
+				if (inargL & BIT(3))
+					gd2 |= BIT(6);
+				else
+					gd2 &= ~BIT(6);
+			} else
+				gen2 &= ~BIT(6);
+			if (inargH & BIT(4)) {
+				gen2 |= BIT(3);
+				if (inargL & BIT(4))
+					gd2 |= BIT(3);
+				else
+					gd2 &= ~BIT(3);
+			} else
+				gen2 &= ~BIT(3);
+		} else if (ch343->chiptype == CHIP_CH9103M) {
+			if (inargH & BIT(0)) {
+				gen1 |= BIT(3);
+				if (inargL & BIT(0))
+					gd1 |= BIT(3);
+				else
+					gd1 &= ~BIT(3);
+			} else
+				gen1 &= ~BIT(3);
+			if (inargH & BIT(1)) {
+				gen1 |= BIT(2);
+				if (inargL & BIT(1))
+					gd1 |= BIT(2);
+				else
+					gd1 &= ~BIT(2);
+			} else
+				gen1 &= ~BIT(2);
+			if (inargH & BIT(2)) {
+				gen3 |= BIT(2);
+				if (inargL & BIT(2))
+					gd3 |= BIT(2);
+				else
+					gd3 &= ~BIT(2);
+			} else
+				gen3 &= ~BIT(2);
+			if (inargH & BIT(3)) {
+				gen2 |= BIT(6);
+				if (inargL & BIT(3))
+					gd2 |= BIT(6);
+				else
+					gd2 &= ~BIT(6);
+			} else
+				gen2 &= ~BIT(6);
+			if (inargH & BIT(4)) {
+				gen1 |= BIT(0);
+				if (inargL & BIT(4))
+					gd1 |= BIT(0);
+				else
+					gd1 &= ~BIT(0);
+			} else
+				gen1 &= ~BIT(0);
+			if (inargH & BIT(5)) {
+				gen1 |= BIT(6);
+				if (inargL & BIT(5))
+					gd1 |= BIT(6);
+				else
+					gd1 &= ~BIT(6);
+			} else
+				gen1 &= ~BIT(6);
+			if (inargH & BIT(6)) {
+				gen2 |= BIT(3);
+				if (inargL & BIT(6))
+					gd2 |= BIT(3);
+				else
+					gd2 &= ~BIT(3);
+			} else
+				gen2 &= ~BIT(3);
+			if (inargH & BIT(7)) {
+				gen2 |= BIT(5);
+				if (inargL & BIT(7))
+					gd2 |= BIT(5);
+				else
+					gd2 &= ~BIT(5);
+			} else
+				gen2 &= ~BIT(5);
+			if (inargH & BIT(8)) {
+				gen3 |= BIT(0);
+				if (inargL & BIT(8))
+					gd3 |= BIT(0);
+				else
+					gd3 &= ~BIT(0);
+			} else
+				gen3 &= ~BIT(0);
+			if (inargH & BIT(9)) {
+				gen2 |= BIT(2);
+				if (inargL & BIT(9))
+					gd2 |= BIT(2);
+				else
+					gd2 &= ~BIT(2);
+			} else
+				gen2 &= ~BIT(2);
+			if (inargH & BIT(10)) {
+				gen1 |= BIT(5);
+				if (inargL & BIT(10))
+					gd1 |= BIT(5);
+				else
+					gd1 &= ~BIT(5);
+			} else
+				gen1 &= ~BIT(5);
+			if (inargH & BIT(11)) {
+				gen2 |= BIT(4);
+				if (inargL & BIT(11))
+					gd2 |= BIT(4);
+				else
+					gd2 &= ~BIT(4);
+			} else
+				gen2 &= ~BIT(4);
+		} else if (ch343->chiptype == CHIP_CH9101UH) {
+			if (inargH & BIT(0)) {
+				gen3 |= BIT(2);
+				if (inargL & BIT(0))
+					gd3 |= BIT(2);
+				else
+					gd3 &= ~BIT(2);
+			} else
+				gen3 &= ~BIT(6);
+			if (inargH & BIT(1)) {
+				gen3 |= BIT(3);
+				if (inargL & BIT(1))
+					gd3 |= BIT(3);
+				else
+					gd3 &= ~BIT(3);
+			} else
+				gen3 &= ~BIT(3);
+			if (inargH & BIT(2)) {
+				gen1 |= BIT(3);
+				if (inargL & BIT(2))
+					gd1 |= BIT(3);
+				else
+					gd1 &= ~BIT(3);
+			} else
+				gen1 &= ~BIT(3);
+			if (inargH & BIT(3)) {
+				gen1 |= BIT(2);
+				if (inargL & BIT(3))
+					gd1 |= BIT(2);
+				else
+					gd1 &= ~BIT(2);
+			} else
+				gen1 &= ~BIT(2);
+			if (inargH & BIT(4)) {
+				gen1 |= BIT(5);
+				if (inargL & BIT(4))
+					gd1 |= BIT(5);
+				else
+					gd1 &= ~BIT(5);
+			} else
+				gen1 &= ~BIT(5);
+			if (inargH & BIT(6)) {
+				gen2 |= BIT(4);
+				if (inargL & BIT(6))
+					gd2 |= BIT(4);
+				else
+					gd2 &= ~BIT(4);
+			} else
+				gen2 &= ~BIT(4);
+		 } else if (ch343->chiptype == CHIP_CH344L ||
+		 	ch343->chiptype == CHIP_CH344Q) {
+			for (i = 0; i < 8; i++) {
+				if (inargH & BIT(i)) {
+					gen2 |= BIT(i);
+					if (inargL & BIT(i))
+						gd2 |= BIT(i);
+					else
+						gd2 &= ~BIT(i);
+				} else
+					gen2 &= ~BIT(i);
+				if (inargH & BIT(i + 8)) {
+					gen1 |= BIT(i);
+					if (inargL & BIT(i + 8))
+						gd1 |= BIT(i);
+					else
+						gd1 &= ~BIT(i);
+				} else
+					gen1 &= ~BIT(i);
+			}
+			value = gen1 + ((u16)gd1 << 8);
+			index = gen2 + ((u16)gd2 << 8);
+			rv = ch343_control_out(ch343, CMD_C7, value, index);
+			if (rv < 0)
+				goto out;
+
+			break;
+		}
+		value = gen1 + ((u16)gd1 << 8);
+		index = gen2 + ((u16)gd2 << 8);
+		rv = ch343_control_out(ch343, CMD_C7, value, index);
+		if (rv < 0)
+			goto out;
+		value = gd3 + ((u16)gv3 << 8);
+		index = gen3;
+		rv = ch343_control_out(ch343, CMD_C8, value, index);
+		if (rv < 0)
+			goto out;
+
+		break;
+	case IOCTL_CMD_GPIOSET:
+		if (get_user(inarg, argval)) {
+			rv = -EFAULT;
+			goto out;
+		}
+
+		rv = ch343_control_in(ch343, CMD_C11, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		gen1 = buffer[0];
+		gen2 = buffer[1];
+		gen3 = buffer[2];
+
+		rv = ch343_control_in(ch343, CMD_C10, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gv1 = buffer[2];
+			gv2 = buffer[3];
+		} else {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gd3 = buffer[2];
+			gv1 = buffer[3];
+			gv2 = buffer[4];
+			gv3 = buffer[5];
+		}
+
+		inargH = inarg >> 16;
+		inargL = inarg;
+
+		gbit1 = gbit2 = gbit3 = 0x00;
+		gopbit1 = gopbit2 = 0x00;
+
+		if (ch343->chiptype == CHIP_CH9102X) {
+			if ((inargH & BIT(0)) && (gen2 & BIT(3)) && (gd2 & BIT(3))) {
+				gbit2 |= BIT(3);
+				if (inargL & BIT(0))
+					gv2 |= BIT(3);
+				else
+					gv2 &= ~BIT(3);
+			}
+			if ((inargH & BIT(1)) && (gen2 & BIT(5)) && (gd2 & BIT(5))) {
+				gbit2 |= BIT(5);
+				if (inargL & BIT(1))
+					gv2 |= BIT(5);
+				else
+					gv2 &= ~BIT(5);
+			}
+			if ((inargH & BIT(2)) && (gen2 & BIT(1)) && (gd2 & BIT(1))) {
+				gbit2 |= BIT(1);
+				if (inargL & BIT(2))
+					gv2 |= BIT(1);
+				else
+					gv2 &= ~BIT(1);
+			}
+			if ((inargH & BIT(3)) && (gen2 & BIT(7)) && (gd2 & BIT(7))) {
+				gbit2 |= BIT(7);
+				if (inargL & BIT(3))
+					gv2 |= BIT(7);
+				else
+					gv2 &= ~BIT(7);
+			}
+			if ((inargH & BIT(5)) && (gen3 & BIT(0)) && (gd3 & BIT(0))) {
+				gbit3 |= BIT(0);
+				if (inargL & BIT(5))
+					gv3 |= BIT(0);
+				else
+					gv3 &= ~BIT(0);
+			}
+			if ((inargH & BIT(6)) && (gen2 & BIT(2)) && (gd2 & BIT(2))) {
+				gbit2 |= BIT(2);
+				if (inargL & BIT(6))
+					gv2 |= BIT(2);
+				else
+					gv2 &= ~BIT(2);
+			}
+		} else if (ch343->chiptype == CHIP_CH9102F) {
+			if ((inargH & BIT(0)) && (gen2 & BIT(1)) && (gd2 & BIT(1))) {
+				gbit2 |= BIT(1);
+				if (inargL & BIT(0))
+					gv2 |= BIT(1);
+				else
+					gv2 &= ~BIT(1);
+			}
+			if ((inargH & BIT(1)) && (gen2 & BIT(7)) && (gd2 & BIT(7))) {
+				gbit2 |= BIT(7);
+				if (inargL & BIT(1))
+					gv2 |= BIT(7);
+				else
+					gv2 &= ~BIT(7);
+			}
+			if ((inargH & BIT(2)) && (gen2 & BIT(4)) && (gd2 & BIT(4))) {
+				gbit2 |= BIT(4);
+				if (inargL & BIT(2))
+					gv2 |= BIT(4);
+				else
+					gv2 &= ~BIT(4);
+			}
+			if ((inargH & BIT(3)) && (gen2 & BIT(6)) && (gd2 & BIT(6))) {
+				gbit2 |= BIT(6);
+				if (inargL & BIT(3))
+					gv2 |= BIT(6);
+				else
+					gv2 &= ~BIT(6);
+			}
+			if ((inargH & BIT(4)) && (gen2 & BIT(3)) && (gd2 & BIT(3))) {
+				gbit2 |= BIT(3);
+				if (inargL & BIT(4))
+					gv2 |= BIT(3);
+				else
+					gv2 &= ~BIT(3);
+			}
+		} else if (ch343->chiptype == CHIP_CH9103M) {
+			if ((inargH & BIT(0)) && (gen1 & BIT(3)) && (gd1 & BIT(3))) {
+				gbit1 |= BIT(3);
+				if (inargL & BIT(0))
+					gv1 |= BIT(3);
+				else
+					gv1 &= ~BIT(3);
+			}
+			if ((inargH & BIT(1)) && (gen1 & BIT(2)) && (gd1 & BIT(2))) {
+				gbit1 |= BIT(2);
+				if (inargL & BIT(1))
+					gv1 |= BIT(2);
+				else
+					gv1 &= ~BIT(2);
+			}
+			if ((inargH & BIT(2)) && (gen3 & BIT(2)) && (gd3 & BIT(2))) {
+				gbit3 |= BIT(2);
+				if (inargL & BIT(2))
+					gv3 |= BIT(2);
+				else
+					gv3 &= ~BIT(2);
+			}
+			if ((inargH & BIT(3)) && (gen2 & BIT(6)) && (gd2 & BIT(6))) {
+				gbit2 |= BIT(6);
+				if (inargL & BIT(3))
+					gv2 |= BIT(6);
+				else
+					gv2 &= ~BIT(6);
+			}
+			if ((inargH & BIT(4)) && (gen1 & BIT(0)) && (gd1 & BIT(0))) {
+				gbit1 |= BIT(0);
+				if (inargL & BIT(4))
+					gv1 |= BIT(0);
+				else
+					gv1 &= ~BIT(0);
+			}
+			if ((inargH & BIT(5)) && (gen1 & BIT(6)) && (gd1 & BIT(6))) {
+				gbit1 |= BIT(6);
+				if (inargL & BIT(5))
+					gv1 |= BIT(6);
+				else
+					gv1 &= ~BIT(6);
+			}
+			if ((inargH & BIT(6)) && (gen2 & BIT(3)) && (gd2 & BIT(3))) {
+				gbit2 |= BIT(3);
+				if (inargL & BIT(6))
+					gv2 |= BIT(3);
+				else
+					gv2 &= ~BIT(3);
+			}
+			if ((inargH & BIT(7)) && (gen2 & BIT(5)) && (gd2 & BIT(5))) {
+				gbit2 |= BIT(5);
+				if (inargL & BIT(7))
+					gv2 |= BIT(5);
+				else
+					gv2 &= ~BIT(5);
+			}
+			if ((inargH & BIT(8)) && (gen3 & BIT(0)) && (gd3 & BIT(0))) {
+				gbit3 |= BIT(0);
+				if (inargL & BIT(8))
+					gv3 |= BIT(0);
+				else
+					gv3 &= ~BIT(0);
+			}
+			if ((inargH & BIT(9)) && (gen2 & BIT(2)) && (gd2 & BIT(2))) {
+				gbit2 |= BIT(2);
+				if (inargL & BIT(9))
+					gv2 |= BIT(2);
+				else
+					gv2 &= ~BIT(2);
+			}
+			if ((inargH & BIT(10)) && (gen1 & BIT(5)) && (gd1 & BIT(5))) {
+				gbit1 |= BIT(5);
+				if (inargL & BIT(10))
+					gv1 |= BIT(5);
+				else
+					gv1 &= ~BIT(5);
+			}
+			if ((inargH & BIT(11)) && (gen2 & BIT(4)) && (gd2 & BIT(4))) {
+				gbit2 |= BIT(4);
+				if (inargL & BIT(11))
+					gv2 |= BIT(4);
+				else
+					gv2 &= ~BIT(4);
+			}
+		} else if (ch343->chiptype == CHIP_CH9101UH) {
+			if ((inargH & BIT(0)) && (gen3 & BIT(2)) && (gd3 & BIT(2))) {
+				gbit3 |= BIT(2);
+				if (inargL & BIT(0))
+					gv3 |= BIT(2);
+				else
+					gv3 &= ~BIT(2);
+			}
+			if ((inargH & BIT(1)) && (gen3 & BIT(3)) && (gd3 & BIT(3))) {
+				gbit3 |= BIT(3);
+				if (inargL & BIT(1))
+					gv3 |= BIT(3);
+				else
+					gv3 &= ~BIT(3);
+			}
+			if ((inargH & BIT(2)) && (gen1 & BIT(3)) && (gd1 & BIT(3))) {
+				gbit1 |= BIT(3);
+				if (inargL & BIT(2))
+					gv1 |= BIT(3);
+				else
+					gv1 &= ~BIT(3);
+			}
+			if ((inargH & BIT(3)) && (gen1 & BIT(2)) && (gd1 & BIT(2))) {
+				gbit1 |= BIT(2);
+				if (inargL & BIT(3))
+					gv1 |= BIT(2);
+				else
+					gv1 &= ~BIT(2);
+			}
+			if ((inargH & BIT(4)) && (gen1 & BIT(5)) && (gd1 & BIT(5))) {
+				gbit1 |= BIT(5);
+				if (inargL & BIT(4))
+					gv1 |= BIT(5);
+				else
+					gv1 &= ~BIT(5);
+			}
+			if ((inargH & BIT(6)) && (gen2 & BIT(4)) && (gd2 & BIT(4))) {
+				gbit2 |= BIT(4);
+				if (inargL & BIT(6))
+					gv2 |= BIT(4);
+				else
+					gv2 &= ~BIT(4);
+			}
+		}  else if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			for (i = 0; i < 8; i++) {
+				if ((inargH & BIT(i)) && (gen2 & BIT(i)) && (gd2 & BIT(i))) {
+					gbit2 |= BIT(i);
+					if (inargL & BIT(i))
+						gv2 |= BIT(i);
+					else
+						gv2 &= ~BIT(i);
+				}
+				if ((inargH & BIT(i + 8)) && (gen1 & BIT(i)) && (gd1 & BIT(i))) {
+					gbit1 |= BIT(i);
+					if (inargL & BIT(i + 8))
+						gv1 |= BIT(i);
+					else
+						gv1 &= ~BIT(i);
+				}
+			}
+			value = gbit1 + ((u16)gv1 << 8);
+			index = gbit2 + ((u16)gv2 << 8);
+			rv = ch343_control_out(ch343, CMD_C9, value, index);
+			if (rv < 0)
+				goto out;
+
+			break;
+		}
+
+		value = gbit1 + ((u16)gv1 << 8);
+		index = gbit2 + ((u16)gv2 << 8);
+		rv = ch343_control_out(ch343, CMD_C9, value, index);
+		if (rv < 0)
+			goto out;
+
+		value = gd3 + ((u16)gv3 << 8);
+		index = gen3;
+		rv = ch343_control_out(ch343, CMD_C8, value, index);
+		if (rv < 0)
+			goto out;
+
+		break;
+	case IOCTL_CMD_GPIOGET:
+		if (get_user(inarg, argval)) {
+			rv = -EFAULT;
+			goto out;
+		}
+
+		rv = ch343_control_in(ch343, CMD_C10, 0x00,
+					0x00, buffer, 0x08);
+		if (rv < 0)
+			goto out;
+
+		if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gv1 = buffer[2];
+			gv2 = buffer[3];
+		} else {
+			gd1 = buffer[0];
+			gd2 = buffer[1];
+			gd3 = buffer[2];
+			gv1 = buffer[3];
+			gv2 = buffer[4];
+			gv3 = buffer[5];
+		}
+
+		if (ch343->chiptype == CHIP_CH9102X) {
+			if (gv2 & BIT(3))
+				gv |= BIT(0);
+			if (gv2 & BIT(5))
+				gv |= BIT(1);
+			if (gv2 & BIT(1))
+				gv |= BIT(2);
+			if (gv2 & BIT(7))
+				gv |= BIT(3);
+			if (gv3 & BIT(0))
+				gv |= BIT(5);
+			if (gv2 & BIT(2))
+				gv |= BIT(6);
+		} else if (ch343->chiptype == CHIP_CH9102F) {
+			if (gv2 & BIT(1))
+				gv |= BIT(0);
+			if (gv2 & BIT(7))
+				gv |= BIT(1);
+			if (gv2 & BIT(4))
+				gv |= BIT(2);
+			if (gv2 & BIT(6))
+				gv |= BIT(3);
+			if (gv2 & BIT(3))
+				gv |= BIT(4);
+		} else if (ch343->chiptype == CHIP_CH9103M) {
+			if (gv1 & BIT(3))
+				gv |= BIT(0);
+			if (gv1 & BIT(2))
+				gv |= BIT(1);
+			if (gv3 & BIT(2))
+				gv |= BIT(2);
+			if (gv2 & BIT(6))
+				gv |= BIT(3);
+			if (gv1 & BIT(0))
+				gv |= BIT(4);
+			if (gv1 & BIT(6))
+				gv |= BIT(5);
+			if (gv2 & BIT(3))
+				gv |= BIT(6);
+			if (gv2 & BIT(5))
+				gv |= BIT(7);
+			if (gv3 & BIT(0))
+				gv |= BIT(8);
+			if (gv2 & BIT(2))
+				gv |= BIT(9);
+			if (gv1 & BIT(5))
+				gv |= BIT(10);
+			if (gv2 & BIT(4))
+				gv |= BIT(11);
+		} else if (ch343->chiptype == CHIP_CH9101UH) {
+			if (gv3 & BIT(2))
+				gv |= BIT(0);
+			if (gv3 & BIT(3))
+				gv |= BIT(1);
+			if (gv1 & BIT(3))
+				gv |= BIT(2);
+			if (gv1 & BIT(2))
+				gv |= BIT(3);
+			if (gv1 & BIT(5))
+				gv |= BIT(4);
+			if (gv2 & BIT(4))
+				gv |= BIT(6);
+		} else if (ch343->chiptype == CHIP_CH344L ||
+			ch343->chiptype == CHIP_CH344Q) {
+			gv |= gv1 << 8;
+			gv |= gv2;
+		}
+
+		if (put_user(gv, argval)) {
 			rv = -EFAULT;
 			goto out;
 		}
@@ -1018,12 +2047,17 @@ out:
 	return rv;
 }
 
-static int ch343_get(unsigned int bval,
+static int ch343_get(CHIPTYPE chiptype, unsigned int bval,
 		unsigned char *fct, unsigned char *dvs)
 {
 	unsigned char a;
 	unsigned char b;
 	unsigned long c;
+
+	if (chiptype == CHIP_CH347T && bval >= 2000000) {
+		*fct = (unsigned char)(bval / 200);
+		*dvs = (unsigned char)((bval / 200) >> 8);
+	}
 
 	switch (bval) {
 	case 6000000:
@@ -1090,7 +2124,7 @@ static void ch343_tty_set_termios(struct tty_struct *tty,
 
 	if (newline.dwDTERate == 0)
 			newline.dwDTERate = 9600;
-    ch343_get(newline.dwDTERate, &fct, &dvs);
+    ch343_get(ch343->chiptype, newline.dwDTERate, &fct, &dvs);
 
 	newline.bCharFormat = termios->c_cflag & CSTOPB ? 2 : 1;
 	if (newline.bCharFormat == 2)
@@ -1629,13 +2663,13 @@ static const struct usb_device_id ch343_ids[] = {
 	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55D5,    /* ch344 chip */
 	  	USB_CDC_ACM_PROTO_AT_V25TER) },
 
-	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55DA,    /* ch347 chip mode 0 */
+	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55DA,    /* ch347 chip mode0*/
+	  	USB_CDC_ACM_PROTO_AT_V25TER) },
+	
+	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55DB,    /* ch347 chip mode1*/
 	  	USB_CDC_ACM_PROTO_AT_V25TER) },
 
-	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55DB,    /* ch347 chip mode 1 */
-	  	USB_CDC_ACM_PROTO_AT_V25TER) },
-
-	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55DD,    /* ch347 chip mode 3 */
+	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55DD,    /* ch347 chip mode3*/
 	  	USB_CDC_ACM_PROTO_AT_V25TER) },
 
 	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55D8,    /* ch9101 chip */
@@ -1646,9 +2680,6 @@ static const struct usb_device_id ch343_ids[] = {
 
 	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55D7,    /* ch9103 chip */
 	  	USB_CDC_ACM_PROTO_AT_V25TER) },
-	
-	{ USB_DEVICE_INTERFACE_PROTOCOL(0x1a86, 0x55D6,    /* ch9143 chip */
-		USB_CDC_ACM_PROTO_AT_V25TER) },
 
 	{ }
 };

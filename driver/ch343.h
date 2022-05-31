@@ -135,19 +135,19 @@ struct usb_ch343_line_coding {
 
 typedef enum {
 	CHIP_CH342F = 0x00,
-	CHIP_CH342GJK,
+	CHIP_CH342K,
 	CHIP_CH343GP,
 	CHIP_CH343G_AUTOBAUD,
 	CHIP_CH343K,
 	CHIP_CH343J,
 	CHIP_CH344L,
 	CHIP_CH344Q,
+	CHIP_CH347T,
 	CHIP_CH9101UH,
+	CHIP_CH9101RY,
 	CHIP_CH9102F,
 	CHIP_CH9102X,
 	CHIP_CH9103M,
-	CHIP_CH9143,
-	CHIP_CH347,
 } CHIPTYPE;
 
 struct ch343 {
@@ -191,6 +191,8 @@ struct ch343 {
 	u16 idProduct;
 	u8 gpio5dir;
 };
+
+#define CDC_DATA_INTERFACE_TYPE	0x0a
 
 /* constants describing various quirks and errors */
 #define NO_UNION_NORMAL				BIT(0)
