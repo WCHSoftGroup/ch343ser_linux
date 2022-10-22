@@ -4,7 +4,7 @@ PWD :=$(shell pwd)
 default:
 	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
 clean:
-	rm -rf *.mk .tmp_versions Module.symvers *.mod.c *.o *.ko .*.cmd Module.markers modules.order
+	rm -rf *.mk .tmp_versions Module.symvers *.mod.c *.o *.ko .*.cmd *.mod Module.markers modules.order
 load:
 	insmod ch343.ko
 unload:
