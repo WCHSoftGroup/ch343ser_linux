@@ -4,7 +4,7 @@ PWD :=$(shell pwd)
 default:
 	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
 clean:
-	rm -rf *.mk .tmp_versions Module.symvers *.mod.c *.o *.ko .*.cmd Module.markers modules.order
+	rm -rf *.mk .tmp_versions Module.symvers *.mod.c *.o *.ko .*.cmd Module.markers modules.order *.a *.mod
 load:
 	insmod ch343.ko
 unload:
@@ -15,7 +15,6 @@ install: default
 	echo "ch343\n" >> /etc/modules
 	depmod -a
 uninstall:
-	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/ch343.ko
 	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/ch343.ko
 	depmod -a
 else
