@@ -22,7 +22,7 @@
 
 ​	Before the driver works, you should make sure that the usb device has been plugged in and is working properly, you can use shell command "lsusb" or "dmesg" to confirm that, USB VID of these devices are [1A86], you can view all IDs from the id table which defined in "ch343.c".
 
-​	If the device works well, the driver will created tty devices named "ttyCH343USBx" in /dev directory.
+​	If the device works well, the driver will created tty devices named "ttyCH343USBx" in /dev directory. Operating the device in the /dev directory under Linux requires root permission by default, if users want to access the device in a non root mode, they can create udev rule file related to the device.
 
 ## Note
 
