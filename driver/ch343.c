@@ -1652,7 +1652,7 @@ static int ch343_probe(struct usb_interface *intf, const struct usb_device_id *i
     ch343->ctrlurb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
     ch343->ctrlurb->transfer_dma = ch343->ctrl_dma;
 
-    dev_info(&intf->dev, "ttyCH343USB%d: usb to uart device\n", minor);
+    dev_info(&intf->dev, "ttyUSB%d: usb to uart device\n", minor);
 
     usb_driver_claim_interface(&ch343_driver, data_interface, ch343);
     usb_set_intfdata(data_interface, ch343);
@@ -1938,7 +1938,7 @@ static int __init ch343_init(void)
     if (!ch343_tty_driver)
         return -ENOMEM;
 #endif
-    ch343_tty_driver->driver_name = "usbch343", ch343_tty_driver->name = "ttyCH343USB",
+    ch343_tty_driver->driver_name = "usbch343", ch343_tty_driver->name = "ttyUSB",
     ch343_tty_driver->major = CH343_TTY_MAJOR, ch343_tty_driver->minor_start = 0,
     ch343_tty_driver->type = TTY_DRIVER_TYPE_SERIAL, ch343_tty_driver->subtype = SERIAL_TYPE_NORMAL,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
