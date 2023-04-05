@@ -71,7 +71,11 @@ static struct usb_interface *g_intf;
 static DEFINE_IDR(ch343_minors);
 static DEFINE_MUTEX(ch343_minors_lock);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+static void ch343_tty_set_termios(struct tty_struct *tty, const struct ktermios *termios_old);
+#else
 static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termios_old);
+#endif
 
 /*
  * Look up an ch343 structure by minor. If found and not disconnected, increment
@@ -1197,7 +1201,11 @@ static int ch343_get(CHIPTYPE chiptype, unsigned int bval, unsigned char *fct, u
     return 0;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+static void ch343_tty_set_termios(struct tty_struct *tty, const struct ktermios *termios_old)
+#else
 static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termios_old)
+#endif
 {
     struct ch343 *ch343 = tty->driver_data;
     struct ktermios *termios = &tty->termios;
