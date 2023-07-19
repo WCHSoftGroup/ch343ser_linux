@@ -1,6 +1,6 @@
 ifeq ($(KERNELRELEASE), )
 KERNELDIR := /lib/modules/$(shell uname -r)/build
-PWD :=$(shell pwd)
+PWD := $(shell pwd)
 default:
 	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
 clean:
@@ -10,12 +10,14 @@ load:
 unload:
 	rmmod ch343
 install: default
-	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial
-	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial
-	echo "ch343\n" >> /etc/modules
+	insmod ch343.ko || true
+	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
+	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
+	echo "ch343\n" >> /etc/modules || true
 	depmod -a
 uninstall:
-	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/ch343.ko
+	rmmod ch343 || true
+	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/ch343.ko || true
 	depmod -a
 else
 	obj-m := ch343.o
