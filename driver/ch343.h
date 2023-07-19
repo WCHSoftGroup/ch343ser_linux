@@ -124,7 +124,7 @@ typedef enum {
 	CHIP_CH344L,
 	CHIP_CH344L_V2,
 	CHIP_CH344Q,
-	CHIP_CH347T,
+	CHIP_CH347TF,
 	CHIP_CH9101UH,
 	CHIP_CH9101RY,
 	CHIP_CH9102F,
@@ -132,57 +132,6 @@ typedef enum {
 	CHIP_CH9103M,
 	CHIP_CH9104L,
 } CHIPTYPE;
-
-struct gpioinfo {
-	int group;
-	int pin;
-};
-
-struct ch343_gpio {
-	int gpiocount;
-	struct gpioinfo io[64];
-};
-
-struct ch343_gpio ch343_gpios[] = {
-	{ 0, {} },
-	{ 0, {} },
-	{ 0, {} },
-	{ 0, {} },
-	{ 0, {} },
-	{ 0, {} },
-	/* CH344L */
-	{ 8, {} },
-	/* CH344L-V2 */
-	{ 8, {} },
-	/* CH344Q */
-	{ 8, {} },
-	/* CH347T */
-	{ 8, {} },
-	/* CH9101UH */
-	{ 5, { { 3, 2 }, { 3, 3 }, { 1, 3 }, { 1, 2 }, { 1, 5 }, { 2, 4 } } },
-	/* CH9101RY */
-	{ 4, { { 1, 3 }, { 3, 3 }, { 3, 2 }, { 2, 4 } } },
-	/* CH9102F */
-	{ 5, { { 2, 1 }, { 2, 7 }, { 2, 4 }, { 2, 6 }, { 2, 3 } } },
-	/* CH9102X */
-	{ 6, { { 2, 3 }, { 2, 5 }, { 2, 1 }, { 2, 7 }, { 3, 0 }, { 2, 2 } } },
-	/* CH9103M */
-	{ 12,
-	  { { 1, 3 },
-	    { 1, 2 },
-	    { 3, 2 },
-	    { 2, 6 },
-	    { 1, 0 },
-	    { 1, 6 },
-	    { 2, 3 },
-	    { 2, 5 },
-	    { 3, 0 },
-	    { 2, 2 },
-	    { 1, 5 },
-	    { 2, 4 } } },
-	/* CH9104L */
-	{ 24, {} },
-};
 
 struct ch343 {
 	struct usb_device *dev;	       /* the corresponding usb device */

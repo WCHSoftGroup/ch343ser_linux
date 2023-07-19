@@ -11,7 +11,7 @@
  * (at your option) any later version.
  *
  * System required:
- * Kernel version beyond 3.4.x
+ * Kernel version beyond 3.5.x
  * Update Log:
  * V1.0 - initial version
  * V1.1 - add support of chip ch344, ch9101 and ch9103
@@ -309,7 +309,7 @@ static int ch343_configure(struct ch343 *ch343)
 	case 0x55DA:
 	case 0x55DB:
 	case 0x55DD:
-		ch343->chiptype = CHIP_CH347T;
+		ch343->chiptype = CHIP_CH347TF;
 		break;
 	case 0x55DF:
 		ch343->chiptype = CHIP_CH9104L;
@@ -401,7 +401,7 @@ static void ch343_update_status(struct ch343 *ch343, unsigned char *data, size_t
 		if (data[0] != 0x00)
 			return;
 		type = data[1];
-	} else if (ch343->chiptype == CHIP_CH347T || ch343->chiptype == CHIP_CH344Q ||
+	} else if (ch343->chiptype == CHIP_CH347TF || ch343->chiptype == CHIP_CH344Q ||
 		   ch343->chiptype == CHIP_CH344L_V2 || ch343->chiptype == CHIP_CH9104L) {
 		type = data[1];
 	}
@@ -822,7 +822,7 @@ static int ch343_tty_break_ctl(struct tty_struct *tty, int state)
 		return -1;
 
 	if (state != 0) {
-		if ((ch343->chiptype == CHIP_CH347T) || (ch343->chiptype == CHIP_CH344L) ||
+		if ((ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) ||
 		    (ch343->chiptype == CHIP_CH344Q) || (ch343->chiptype == CHIP_CH344L_V2) ||
 		    (ch343->chiptype == CHIP_CH9104L)) {
 			regbuf[0] = ch343->iface;
@@ -832,7 +832,7 @@ static int ch343_tty_break_ctl(struct tty_struct *tty, int state)
 			regbuf[1] = 0x00;
 		}
 	} else {
-		if ((ch343->chiptype == CHIP_CH347T) || (ch343->chiptype == CHIP_CH344L) ||
+		if ((ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) ||
 		    (ch343->chiptype == CHIP_CH344Q) || (ch343->chiptype == CHIP_CH344L_V2) ||
 		    (ch343->chiptype == CHIP_CH9104L)) {
 			regbuf[0] = ch343->iface;
@@ -844,7 +844,7 @@ static int ch343_tty_break_ctl(struct tty_struct *tty, int state)
 	}
 	reg_contents = get_unaligned_le16(regbuf);
 
-	if ((ch343->chiptype == CHIP_CH347T) || (ch343->chiptype == CHIP_CH344L) || (ch343->chiptype == CHIP_CH344Q) ||
+	if ((ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) || (ch343->chiptype == CHIP_CH344Q) ||
 	    (ch343->chiptype == CHIP_CH344L_V2) || (ch343->chiptype == CHIP_CH9104L)) {
 		retval = ch343_control_out(ch343, CMD_C4, reg_contents, 0x00);
 	} else {
@@ -1109,7 +1109,7 @@ static int ch343_get(CHIPTYPE chiptype, unsigned int bval, unsigned char *fct, u
 	unsigned char b;
 	unsigned long c;
 
-	if (((chiptype == CHIP_CH347T) || (chiptype == CHIP_CH344Q) || (chiptype == CHIP_CH9104L)) && bval >= 2000000) {
+	if (((chiptype == CHIP_CH347TF) || (chiptype == CHIP_CH344Q) || (chiptype == CHIP_CH9104L)) && bval >= 2000000) {
 		*fct = (unsigned char)(bval / 200);
 		*dvs = (unsigned char)((bval / 200) >> 8);
 	} else {
@@ -1776,9 +1776,11 @@ static int ch343_reset_resume(struct usb_interface *intf)
 static const struct usb_device_id ch343_ids[] = { { USB_DEVICE(0x1a86, 0x55d2) }, /* ch342 chip */
 						  { USB_DEVICE(0x1a86, 0x55d3) }, /* ch343 chip */
 						  { USB_DEVICE(0x1a86, 0x55d5) }, /* ch344 chip */
-						  { USB_DEVICE(0x1a86, 0x55da) }, /* ch347 chip mode0*/
-						  { USB_DEVICE(0x1a86, 0x55db) }, /* ch347 chip mode1*/
-						  { USB_DEVICE(0x1a86, 0x55dd) }, /* ch347 chip mode3*/
+						  { USB_DEVICE(0x1a86, 0x55da) }, /* ch347t chip mode0*/
+						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55db, 0x00) }, /* ch347t chip mode1*/
+						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55dd, 0x00) }, /* ch347t chip mode3*/
+						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x00) }, /* ch347f chip uart0*/
+						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x02) }, /* ch347f chip uart1*/
 						  { USB_DEVICE(0x1a86, 0x55d8) }, /* ch9101 chip */
 						  { USB_DEVICE(0x1a86, 0x55d4) }, /* ch9102 chip */
 						  { USB_DEVICE(0x1a86, 0x55d7) }, /* ch9103 chip */
