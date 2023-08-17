@@ -57,12 +57,13 @@
 
 #define DRIVER_AUTHOR "WCH"
 #define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.6 On 2023.07"
+#define VERSION_DESC  "V1.6 On 2023.08"
 
-#define IOCTL_MAGIC	      'W'
-#define IOCTL_CMD_GETCHIPTYPE _IOR(IOCTL_MAGIC, 0x84, u16)
-#define IOCTL_CMD_CTRLIN      _IOWR(IOCTL_MAGIC, 0x90, u16)
-#define IOCTL_CMD_CTRLOUT     _IOW(IOCTL_MAGIC, 0x91, u16)
+#define IOCTL_MAGIC	       'W'
+#define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
+#define IOCTL_CMD_GETUARTINDEX _IOR(IOCTL_MAGIC, 0x85, u16)
+#define IOCTL_CMD_CTRLIN       _IOWR(IOCTL_MAGIC, 0x90, u16)
+#define IOCTL_CMD_CTRLOUT      _IOW(IOCTL_MAGIC, 0x91, u16)
 
 static struct usb_driver ch343_driver;
 static struct tty_driver *ch343_tty_driver;
@@ -268,7 +269,7 @@ static int ch343_configure(struct ch343 *ch343)
 			ch343->chiptype = CHIP_CH342K;
 		else
 			ch343->chiptype = CHIP_CH342F;
-		if (chiptype != 0x48 || chipver < 0x50)
+		if (chiptype != 0x48 || chipver < 0x45)
 			ch343->iosupport = false;
 		break;
 	case 0x55D3:
@@ -309,6 +310,7 @@ static int ch343_configure(struct ch343 *ch343)
 	case 0x55DA:
 	case 0x55DB:
 	case 0x55DD:
+	case 0x55DE:
 		ch343->chiptype = CHIP_CH347TF;
 		break;
 	case 0x55DF:
@@ -1070,6 +1072,12 @@ static int ch343_tty_ioctl(struct tty_struct *tty, unsigned int cmd, unsigned lo
 			goto out;
 		}
 		break;
+	case IOCTL_CMD_GETUARTINDEX:
+		if (put_user(ch343->iface, argval)) {
+			rv = -EFAULT;
+			goto out;
+		}
+		break;
 	case IOCTL_CMD_CTRLIN:
 		get_user(arg1, (u8 __user *)arg);
 		get_user(arg2, ((u8 __user *)arg + 1));
@@ -1109,7 +1117,8 @@ static int ch343_get(CHIPTYPE chiptype, unsigned int bval, unsigned char *fct, u
 	unsigned char b;
 	unsigned long c;
 
-	if (((chiptype == CHIP_CH347TF) || (chiptype == CHIP_CH344Q) || (chiptype == CHIP_CH9104L)) && bval >= 2000000) {
+	if (((chiptype == CHIP_CH347TF) || (chiptype == CHIP_CH344Q) || (chiptype == CHIP_CH9104L)) &&
+	    bval >= 2000000) {
 		*fct = (unsigned char)(bval / 200);
 		*dvs = (unsigned char)((bval / 200) >> 8);
 	} else {
@@ -1443,7 +1452,7 @@ static int ch343_probe(struct usb_interface *intf, const struct usb_device_id *i
 	int rv = -ENOMEM;
 
 	quirks = (unsigned long)id->driver_info;
-	if (!buffer) {
+	if ((!buffer) || (buflen == 0)) {
 		dev_err(&intf->dev, "Weird descriptor references\n");
 		return -EINVAL;
 	}
@@ -1481,6 +1490,11 @@ static int ch343_probe(struct usb_interface *intf, const struct usb_device_id *i
 next_desc:
 		buflen -= elength;
 		buffer += elength;
+	}
+
+	if (!union_header) {
+		dev_err(&intf->dev, "Weird descriptor references\n");
+		return -EINVAL;
 	}
 
 	control_interface = usb_ifnum_to_if(usb_dev, union_header->bMasterInterface0);
@@ -1773,19 +1787,21 @@ static int ch343_reset_resume(struct usb_interface *intf)
 }
 #endif /* CONFIG_PM */
 
-static const struct usb_device_id ch343_ids[] = { { USB_DEVICE(0x1a86, 0x55d2) }, /* ch342 chip */
-						  { USB_DEVICE(0x1a86, 0x55d3) }, /* ch343 chip */
-						  { USB_DEVICE(0x1a86, 0x55d5) }, /* ch344 chip */
-						  { USB_DEVICE(0x1a86, 0x55da) }, /* ch347t chip mode0*/
-						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55db, 0x00) }, /* ch347t chip mode1*/
-						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55dd, 0x00) }, /* ch347t chip mode3*/
-						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x00) }, /* ch347f chip uart0*/
-						  { USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x02) }, /* ch347f chip uart1*/
-						  { USB_DEVICE(0x1a86, 0x55d8) }, /* ch9101 chip */
-						  { USB_DEVICE(0x1a86, 0x55d4) }, /* ch9102 chip */
-						  { USB_DEVICE(0x1a86, 0x55d7) }, /* ch9103 chip */
-						  { USB_DEVICE(0x1a86, 0x55df) }, /* ch9104 chip */
-						  {} };
+static const struct usb_device_id ch343_ids[] = {
+	{ USB_DEVICE(0x1a86, 0x55d2) },			       /* ch342 chip */
+	{ USB_DEVICE(0x1a86, 0x55d3) },			       /* ch343 chip */
+	{ USB_DEVICE(0x1a86, 0x55d5) },			       /* ch344 chip */
+	{ USB_DEVICE(0x1a86, 0x55da) },			       /* ch347t chip mode0*/
+	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55db, 0x00) }, /* ch347t chip mode1*/
+	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55dd, 0x00) }, /* ch347t chip mode3*/
+	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x00) }, /* ch347f chip uart0*/
+	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x03) }, /* ch347f chip uart1*/
+	{ USB_DEVICE(0x1a86, 0x55d8) },			       /* ch9101 chip */
+	{ USB_DEVICE(0x1a86, 0x55d4) },			       /* ch9102 chip */
+	{ USB_DEVICE(0x1a86, 0x55d7) },			       /* ch9103 chip */
+	{ USB_DEVICE(0x1a86, 0x55df) },			       /* ch9104 chip */
+	{}
+};
 
 MODULE_DEVICE_TABLE(usb, ch343_ids);
 
