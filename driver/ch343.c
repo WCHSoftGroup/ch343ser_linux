@@ -22,6 +22,7 @@
  *      - add support for kernel version beyond 5.14.x
  * V1.6 - add support for non-standard baud rates above 2Mbps of chip ch347 etc.
  *      - add support for kernel version beyond 6.3.x
+ *      - fix bugs when usb device disconnect
  */
 
 #define DEBUG
@@ -57,7 +58,7 @@
 
 #define DRIVER_AUTHOR "WCH"
 #define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.6 On 2023.08"
+#define VERSION_DESC  "V1.6 On 2023.09"
 
 #define IOCTL_MAGIC	       'W'
 #define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
@@ -67,7 +68,6 @@
 
 static struct usb_driver ch343_driver;
 static struct tty_driver *ch343_tty_driver;
-static struct usb_interface *g_intf;
 
 static DEFINE_IDR(ch343_minors);
 static DEFINE_MUTEX(ch343_minors_lock);
@@ -247,7 +247,7 @@ static int ch343_configure(struct ch343 *ch343)
 {
 	char *buffer;
 	int r;
-	const unsigned size = 2;
+	const unsigned size = 8;
 	u8 chiptype;
 	u8 chipver;
 
@@ -256,7 +256,7 @@ static int ch343_configure(struct ch343 *ch343)
 		return -ENOMEM;
 
 	r = ch343_control_in(ch343, CMD_C6, 0, 0, buffer, size);
-	if (r != size)
+	if (r <= 0)
 		goto out;
 
 	chipver = buffer[0];
@@ -1520,18 +1520,20 @@ next_desc:
 		swap(epread, epwrite);
 
 	ch343 = kzalloc(sizeof(struct ch343), GFP_KERNEL);
-	if (ch343 == NULL)
-		goto alloc_fail;
+	if (!ch343)
+		return -ENOMEM;
 
 	ch343->idVendor = id->idVendor;
 	ch343->idProduct = id->idProduct;
 	ch343->iface = control_interface->cur_altsetting->desc.bInterfaceNumber / 2;
 
+	usb_get_intf(control_interface);
+
 	minor = ch343_alloc_minor(ch343);
 	if (minor < 0) {
 		dev_err(&intf->dev, "no more free ch343 devices\n");
-		kfree(ch343);
-		return -ENODEV;
+		ch343->minor = CH343_MINOR_INVALID;
+		goto alloc_fail;
 	}
 
 	ctrlsize = usb_endpoint_maxp(epctrl);
@@ -1558,15 +1560,15 @@ next_desc:
 
 	buf = usb_alloc_coherent(usb_dev, ctrlsize, GFP_KERNEL, &ch343->ctrl_dma);
 	if (!buf)
-		goto alloc_fail2;
+		goto alloc_fail;
 	ch343->ctrl_buffer = buf;
 
 	if (ch343_write_buffers_alloc(ch343) < 0)
-		goto alloc_fail4;
+		goto err_free_ctrl_buffer;
 
 	ch343->ctrlurb = usb_alloc_urb(0, GFP_KERNEL);
 	if (!ch343->ctrlurb)
-		goto alloc_fail5;
+		goto err_free_write_buffers;
 
 	for (i = 0; i < num_rx_buf; i++) {
 		struct ch343_rb *rb = &(ch343->read_buffers[i]);
@@ -1574,13 +1576,13 @@ next_desc:
 
 		rb->base = usb_alloc_coherent(ch343->dev, readsize, GFP_KERNEL, &rb->dma);
 		if (!rb->base)
-			goto alloc_fail6;
+			goto err_free_read_urbs;
 		rb->index = i;
 		rb->instance = ch343;
 
 		urb = usb_alloc_urb(0, GFP_KERNEL);
 		if (!urb)
-			goto alloc_fail6;
+			goto err_free_read_urbs;
 
 		urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 		urb->transfer_dma = rb->dma;
@@ -1595,7 +1597,7 @@ next_desc:
 
 		snd->urb = usb_alloc_urb(0, GFP_KERNEL);
 		if (snd->urb == NULL)
-			goto alloc_fail7;
+			goto err_free_write_urbs;
 
 		usb_fill_bulk_urb(snd->urb, usb_dev, usb_sndbulkpipe(usb_dev, epwrite->bEndpointAddress), NULL,
 				  ch343->writesize, ch343_write_bulk, snd);
@@ -1612,50 +1614,51 @@ next_desc:
 
 	dev_info(&intf->dev, "ttyCH343USB%d: usb to uart device\n", minor);
 
-	usb_driver_claim_interface(&ch343_driver, data_interface, ch343);
-	usb_set_intfdata(data_interface, ch343);
-	usb_get_intf(control_interface);
-
 	rv = ch343_configure(ch343);
 	if (rv)
-		goto alloc_fail7;
+		goto err_free_write_urbs;
 
-	if (ch343->iosupport && (ch343->iface == 0) && (g_intf == NULL)) {
+	if (ch343->iosupport && (ch343->iface == 0) && (ch343->io_intf == NULL)) {
 		/* register the device now, as it is ready */
 		rv = usb_register_dev(intf, &ch343_class);
 		if (rv) {
 			/* error when registering this driver */
 			dev_err(&intf->dev, "Not able to get a minor for this device.\n");
 		} else {
-			g_intf = intf;
+			ch343->io_intf = intf;
+			dev_info(&intf->dev, "USB to GPIO device now attached to ch343_iodev%d\n", intf->minor);
 		}
 	}
+
+	usb_driver_claim_interface(&ch343_driver, data_interface, ch343);
+	usb_set_intfdata(data_interface, ch343);
 
 	tty_dev = tty_port_register_device(&ch343->port, ch343_tty_driver, minor, &control_interface->dev);
 	if (IS_ERR(tty_dev)) {
 		rv = PTR_ERR(tty_dev);
-		goto alloc_fail7;
+		goto err_release_data_interface;
 	}
 
 	return 0;
 
-alloc_fail7:
-	usb_set_intfdata(intf, NULL);
+err_release_data_interface:
+	usb_set_intfdata(data_interface, NULL);
+	usb_driver_release_interface(&ch343_driver, data_interface);
+err_free_write_urbs:
 	for (i = 0; i < CH343_NW; i++)
 		usb_free_urb(ch343->wb[i].urb);
-alloc_fail6:
+err_free_read_urbs:
 	for (i = 0; i < num_rx_buf; i++)
 		usb_free_urb(ch343->read_urbs[i]);
 	ch343_read_buffers_free(ch343);
 	usb_free_urb(ch343->ctrlurb);
-alloc_fail5:
+err_free_write_buffers:
 	ch343_write_buffers_free(ch343);
-alloc_fail4:
+err_free_ctrl_buffer:
 	usb_free_coherent(usb_dev, ctrlsize, ch343->ctrl_buffer, ch343->ctrl_dma);
-alloc_fail2:
-	ch343_release_minor(ch343);
-	kfree(ch343);
 alloc_fail:
+	tty_port_put(&ch343->port);
+
 	return rv;
 }
 
@@ -1682,14 +1685,15 @@ static void ch343_disconnect(struct usb_interface *intf)
 	if (!ch343)
 		return;
 
+	ch343->disconnected = true;
+
 	/* give back minor */
-	if (ch343->iosupport && (ch343->iface == 0) && (g_intf != NULL)) {
-		usb_deregister_dev(g_intf, &ch343_class);
-		g_intf = NULL;
+	if (ch343->iosupport && (ch343->iface == 0) && (ch343->io_intf != NULL)) {
+		usb_deregister_dev(ch343->io_intf, &ch343_class);
+		ch343->io_intf = NULL;
 	}
 
 	mutex_lock(&ch343->mutex);
-	ch343->disconnected = true;
 	wake_up_all(&ch343->wioctl);
 	usb_set_intfdata(ch343->control, NULL);
 	usb_set_intfdata(ch343->data, NULL);
@@ -1795,7 +1799,7 @@ static const struct usb_device_id ch343_ids[] = {
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55db, 0x00) }, /* ch347t chip mode1*/
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55dd, 0x00) }, /* ch347t chip mode3*/
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x00) }, /* ch347f chip uart0*/
-	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x03) }, /* ch347f chip uart1*/
+	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x02) }, /* ch347f chip uart1*/
 	{ USB_DEVICE(0x1a86, 0x55d8) },			       /* ch9101 chip */
 	{ USB_DEVICE(0x1a86, 0x55d4) },			       /* ch9102 chip */
 	{ USB_DEVICE(0x1a86, 0x55d7) },			       /* ch9103 chip */

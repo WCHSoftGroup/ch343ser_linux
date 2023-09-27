@@ -20,6 +20,8 @@
 #define CH343_TTY_MAJOR	 170
 #define CH343_TTY_MINORS 256
 
+#define CH343_MINOR_INVALID CH343_TTY_MINORS
+
 #define USB_MINOR_BASE 70
 
 /*
@@ -169,6 +171,7 @@ struct ch343 {
 	struct usb_anchor delayed; /* writes queued for a device about to be woken */
 	unsigned long quirks;
 	u8 iface;
+	struct usb_interface *io_intf;
 	CHIPTYPE chiptype;
 	bool iosupport;
 	u16 idVendor;
