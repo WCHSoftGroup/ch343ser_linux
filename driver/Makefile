@@ -1,3 +1,5 @@
+CONFIG_MODULE_SIG=n
+
 ifeq ($(KERNELRELEASE), )
 KERNELDIR := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)

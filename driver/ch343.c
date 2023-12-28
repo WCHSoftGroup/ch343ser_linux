@@ -11,7 +11,7 @@
  * (at your option) any later version.
  *
  * System required:
- * Kernel version beyond 3.5.x
+ * Kernel version beyond 3.2.x
  * Update Log:
  * V1.0 - initial version
  * V1.1 - add support of chip ch344, ch9101 and ch9103
@@ -23,6 +23,8 @@
  * V1.6 - add support for non-standard baud rates above 2Mbps of chip ch347 etc.
  *      - add support for kernel version beyond 6.3.x
  *      - fix bugs when usb device disconnect
+ * V1.7 - add support for kenrel version 3.3.x~3.4.x
+ *      - add support of chip ch9143
  */
 
 #define DEBUG
@@ -58,7 +60,7 @@
 
 #define DRIVER_AUTHOR "WCH"
 #define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.6 On 2023.09"
+#define VERSION_DESC  "V1.7 On 2023.12"
 
 #define IOCTL_MAGIC	       'W'
 #define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
@@ -69,7 +71,12 @@
 static struct usb_driver ch343_driver;
 static struct tty_driver *ch343_tty_driver;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 static DEFINE_IDR(ch343_minors);
+#else
+static struct ch343 *ch343_table[CH343_TTY_MINORS];
+#endif
+
 static DEFINE_MUTEX(ch343_minors_lock);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
@@ -78,11 +85,13 @@ static void ch343_tty_set_termios(struct tty_struct *tty, const struct ktermios 
 static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termios_old);
 #endif
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+
 /*
  * Look up an ch343 structure by minor. If found and not disconnected, increment
  * its refcount and return it with its mutex held.
  */
-static struct ch343 *ch343_get_by_minor(unsigned int minor)
+static struct ch343 *ch343_get_by_index(unsigned int minor)
 {
 	struct ch343 *ch343;
 
@@ -120,6 +129,62 @@ static void ch343_release_minor(struct ch343 *ch343)
 	idr_remove(&ch343_minors, ch343->minor);
 	mutex_unlock(&ch343_minors_lock);
 }
+
+#else
+
+/*
+ * Look up an CH343 structure by index. If found and not disconnected, increment
+ * its refcount and return it with its mutex held.
+ */
+static struct ch343 *ch343_get_by_index(unsigned int index)
+{
+	struct ch343 *ch343;
+
+	mutex_lock(&ch343_minors_lock);
+	ch343 = ch343_table[index];
+	if (ch343) {
+		mutex_lock(&ch343->mutex);
+		if (ch343->disconnected) {
+			mutex_unlock(&ch343->mutex);
+			ch343 = NULL;
+		} else {
+			tty_port_get(&ch343->port);
+			mutex_unlock(&ch343->mutex);
+		}
+	}
+	mutex_unlock(&ch343_minors_lock);
+
+	return ch343;
+}
+
+/*
+ * Try to find an available minor number and if found, associate it with 'ch343'.
+ */
+static int ch343_alloc_minor(struct ch343 *ch343)
+{
+	int minor;
+
+	mutex_lock(&ch343_minors_lock);
+	for (minor = 0; minor < ch343_TTY_MINORS; minor++) {
+		if (!ch343_table[minor]) {
+			ch343_table[minor] = ch343;
+			break;
+		}
+	}
+	mutex_unlock(&ch343_minors_lock);
+
+	return minor;
+}
+
+/* Release the minor number associated with 'ch343'. */
+static void ch343_release_minor(struct ch343 *ch343)
+{
+	mutex_lock(&ch343_minors_lock);
+	ch343_table[ch343->minor] = NULL;
+	mutex_unlock(&ch343_minors_lock);
+}
+
+#endif
 
 static int ch343_control_out(struct ch343 *ch343, u8 request, u16 value, u16 index)
 {
@@ -168,7 +233,7 @@ static int ch343_control_msg_out(struct ch343 *ch343, u8 request, u8 requesttype
 	retval = usb_autopm_get_interface(ch343->control);
 	if (retval)
 		goto out;
-	retval = usb_control_msg(ch343->dev, usb_sndctrlpipe(ch343->dev, 0), request, requesttype, value, index, buf,
+	retval = usb_control_msg(ch343->dev, usb_sndctrlpipe(ch343->dev, 0), request, requesttype, value, index, buffer,
 				 bufsize, DEFAULT_TIMEOUT);
 	usb_autopm_put_interface(ch343->control);
 
@@ -585,8 +650,17 @@ static void ch343_write_bulk(struct urb *urb)
 static void ch343_softint(struct work_struct *work)
 {
 	struct ch343 *ch343 = container_of(work, struct ch343, work);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0))
+	struct tty_struct *tty;
 
+	tty = tty_port_tty_get(&ch343->port);
+	if (!tty)
+		return;
+	tty_wakeup(tty);
+	tty_kref_put(tty);
+#else
 	tty_port_tty_wakeup(&ch343->port);
+#endif
 }
 
 static int ch343_tty_install(struct tty_driver *driver, struct tty_struct *tty)
@@ -594,15 +668,28 @@ static int ch343_tty_install(struct tty_driver *driver, struct tty_struct *tty)
 	struct ch343 *ch343;
 	int retval;
 
-	ch343 = ch343_get_by_minor(tty->index);
+	ch343 = ch343_get_by_index(tty->index);
 	if (!ch343)
 		return -ENODEV;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 	retval = tty_standard_install(driver, tty);
 	if (retval)
 		goto error_init_termios;
 
 	tty->driver_data = ch343;
+#else
+	retval = tty_init_termios(tty);
+	if (retval)
+		goto error_init_termios;
+
+	tty->driver_data = ch343;
+
+	/* Final install (we use the default method) */
+	tty_driver_kref_get(driver);
+	tty->count++;
+	driver->ttys[tty->index] = tty;
+#endif
 
 	return 0;
 
@@ -654,7 +741,9 @@ static int ch343_port_activate(struct tty_port *port, struct tty_struct *tty)
 	set_bit(TTY_NO_WRITE_SPLIT, &tty->flags);
 	ch343->control->needs_remote_wakeup = 1;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0))
 	ch343_tty_set_termios(tty, NULL);
+#endif
 
 	retval = usb_submit_urb(ch343->ctrlurb, GFP_KERNEL);
 	if (retval) {
@@ -698,6 +787,8 @@ static void ch343_port_shutdown(struct tty_port *port)
 	struct ch343_wb *wb;
 	int i;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0))
+
 	usb_autopm_get_interface_no_resume(ch343->control);
 	ch343->control->needs_remote_wakeup = 0;
 	usb_autopm_put_interface(ch343->control);
@@ -716,6 +807,24 @@ static void ch343_port_shutdown(struct tty_port *port)
 		usb_kill_urb(ch343->wb[i].urb);
 	for (i = 0; i < ch343->rx_buflimit; i++)
 		usb_kill_urb(ch343->read_urbs[i]);
+
+#else
+	mutex_lock(&ch343->mutex);
+	if (!ch343->disconnected) {
+		usb_autopm_get_interface(ch343->control);
+		ch343_set_control(ch343, ch343->ctrlout = 0);
+
+		usb_kill_urb(ch343->ctrlurb);
+		for (i = 0; i < CH343_NW; i++)
+			usb_kill_urb(ch343->wb[i].urb);
+		for (i = 0; i < ch343->rx_buflimit; i++)
+			usb_kill_urb(ch343->read_urbs[i]);
+		ch343->control->needs_remote_wakeup = 0;
+
+		usb_autopm_put_interface(ch343->control);
+	}
+	mutex_unlock(&ch343->mutex);
+#endif
 }
 
 static void ch343_tty_cleanup(struct tty_struct *tty)
@@ -1169,7 +1278,11 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 #endif
 {
 	struct ch343 *ch343 = tty->driver_data;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
 	struct ktermios *termios = &tty->termios;
+#else
+	struct ktermios *termios = tty->termios;
+#endif
 	struct usb_ch343_line_coding newline;
 	int newctrl = ch343->ctrlout;
 
@@ -1180,7 +1293,11 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 	unsigned short value = 0;
 	unsigned short index = 0;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
 	if (termios_old && !tty_termios_hw_change(&tty->termios, termios_old)) {
+#else
+	if (termios_old && !tty_termios_hw_change(tty->termios, termios_old)) {
+#endif
 		return;
 	}
 
@@ -1409,10 +1526,20 @@ out:
 	return rv;
 }
 
+#ifdef CONFIG_COMPAT
+static long ch343_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	return ch343_ioctl(file, cmd, arg);
+}
+#endif
+
 static const struct file_operations ch343_fops = {
 	.owner = THIS_MODULE,
 	.open = ch343_open,
 	.unlocked_ioctl = ch343_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl = ch343_compat_ioctl,
+#endif
 	.release = ch343_release,
 };
 
@@ -1560,7 +1687,7 @@ next_desc:
 
 	buf = usb_alloc_coherent(usb_dev, ctrlsize, GFP_KERNEL, &ch343->ctrl_dma);
 	if (!buf)
-		goto alloc_fail;
+		goto err_put_port;
 	ch343->ctrl_buffer = buf;
 
 	if (ch343_write_buffers_alloc(ch343) < 0)
@@ -1633,11 +1760,15 @@ next_desc:
 	usb_driver_claim_interface(&ch343_driver, data_interface, ch343);
 	usb_set_intfdata(data_interface, ch343);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
 	tty_dev = tty_port_register_device(&ch343->port, ch343_tty_driver, minor, &control_interface->dev);
 	if (IS_ERR(tty_dev)) {
 		rv = PTR_ERR(tty_dev);
 		goto err_release_data_interface;
 	}
+#else
+	tty_register_device(ch343_tty_driver, minor, &control_interface->dev);
+#endif
 
 	return 0;
 
@@ -1656,22 +1787,59 @@ err_free_write_buffers:
 	ch343_write_buffers_free(ch343);
 err_free_ctrl_buffer:
 	usb_free_coherent(usb_dev, ctrlsize, ch343->ctrl_buffer, ch343->ctrl_dma);
-alloc_fail:
+err_put_port:
 	tty_port_put(&ch343->port);
+alloc_fail:
+	kfree(ch343);
 
 	return rv;
 }
 
 static void stop_data_traffic(struct ch343 *ch343)
 {
+	struct urb *urb;
+	struct ch343_wb *wb;
 	int i;
+
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0))
+
+	usb_autopm_get_interface_no_resume(ch343->control);
+	ch343->control->needs_remote_wakeup = 0;
+	usb_autopm_put_interface(ch343->control);
+
+	for (;;) {
+		urb = usb_get_from_anchor(&ch343->delayed);
+		if (!urb)
+			break;
+		wb = urb->context;
+		wb->use = 0;
+		usb_autopm_put_interface_async(ch343->control);
+	}
 
 	usb_kill_urb(ch343->ctrlurb);
 	for (i = 0; i < CH343_NW; i++)
 		usb_kill_urb(ch343->wb[i].urb);
 	for (i = 0; i < ch343->rx_buflimit; i++)
 		usb_kill_urb(ch343->read_urbs[i]);
-	cancel_work_sync(&ch343->work);
+
+#else
+	mutex_lock(&ch343->mutex);
+	if (!ch343->disconnected) {
+		usb_autopm_get_interface(ch343->control);
+		ch343_set_control(ch343, ch343->ctrlout = 0);
+
+		usb_kill_urb(ch343->ctrlurb);
+		for (i = 0; i < CH343_NW; i++)
+			usb_kill_urb(ch343->wb[i].urb);
+		for (i = 0; i < ch343->rx_buflimit; i++)
+			usb_kill_urb(ch343->read_urbs[i]);
+		ch343->control->needs_remote_wakeup = 0;
+
+		usb_autopm_put_interface(ch343->control);
+	}
+	mutex_unlock(&ch343->mutex);
+#endif
+
 }
 
 static void ch343_disconnect(struct usb_interface *intf)
@@ -1685,8 +1853,6 @@ static void ch343_disconnect(struct usb_interface *intf)
 	if (!ch343)
 		return;
 
-	ch343->disconnected = true;
-
 	/* give back minor */
 	if (ch343->iosupport && (ch343->iface == 0) && (ch343->io_intf != NULL)) {
 		usb_deregister_dev(ch343->io_intf, &ch343_class);
@@ -1694,6 +1860,7 @@ static void ch343_disconnect(struct usb_interface *intf)
 	}
 
 	mutex_lock(&ch343->mutex);
+	ch343->disconnected = true;
 	wake_up_all(&ch343->wioctl);
 	usb_set_intfdata(ch343->control, NULL);
 	usb_set_intfdata(ch343->data, NULL);
@@ -1795,6 +1962,7 @@ static const struct usb_device_id ch343_ids[] = {
 	{ USB_DEVICE(0x1a86, 0x55d2) },			       /* ch342 chip */
 	{ USB_DEVICE(0x1a86, 0x55d3) },			       /* ch343 chip */
 	{ USB_DEVICE(0x1a86, 0x55d5) },			       /* ch344 chip */
+	{ USB_DEVICE(0x1a86, 0x55d6) },			       /* ch9143 chip */
 	{ USB_DEVICE(0x1a86, 0x55da) },			       /* ch347t chip mode0*/
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55db, 0x00) }, /* ch347t chip mode1*/
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55dd, 0x00) }, /* ch347t chip mode3*/
