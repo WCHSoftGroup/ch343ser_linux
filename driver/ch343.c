@@ -1,7 +1,7 @@
 /*
  * USB serial driver for USB to UART(s) chip ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc.
  *
- * Copyright (C) 2023 Nanjing Qinheng Microelectronics Co., Ltd.
+ * Copyright (C) 2024 Nanjing Qinheng Microelectronics Co., Ltd.
  * Web:		http://wch.cn
  * Author:	WCH <tech@wch.cn>
  *
@@ -60,7 +60,7 @@
 
 #define DRIVER_AUTHOR "WCH"
 #define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.7 On 2023.12"
+#define VERSION_DESC  "V1.7 On 2024.01"
 
 #define IOCTL_MAGIC	       'W'
 #define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
@@ -1302,9 +1302,6 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 	}
 
 	newline.dwDTERate = tty_get_baud_rate(tty);
-
-	if (newline.dwDTERate == 0)
-		newline.dwDTERate = 9600;
 	ch343_get(ch343->chiptype, newline.dwDTERate, &fct, &dvs);
 
 	newline.bCharFormat = termios->c_cflag & CSTOPB ? 2 : 1;
@@ -1356,9 +1353,9 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 
 	if (C_BAUD(tty) == B0) {
 		newline.dwDTERate = ch343->line.dwDTERate;
-		newctrl &= ~CH343_CTO_D;
+		newctrl &= ~(CH343_CTO_D | CH343_CTO_R);
 	} else if (termios_old && (termios_old->c_cflag & CBAUD) == B0) {
-		newctrl |= CH343_CTO_D;
+		newctrl |= CH343_CTO_D | CH343_CTO_R;
 	}
 
 	reg_value |= CH343_L_E_R | CH343_L_E_T;
@@ -2032,7 +2029,7 @@ static int __init ch343_init(void)
 	ch343_tty_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
 #endif
 	ch343_tty_driver->init_termios = tty_std_termios;
-	ch343_tty_driver->init_termios.c_cflag = B9600 | CS8 | CREAD | HUPCL | CLOCAL;
+	ch343_tty_driver->init_termios.c_cflag = B0 | CS8 | CREAD | HUPCL | CLOCAL;
 	tty_set_operations(ch343_tty_driver, &ch343_ops);
 
 	retval = tty_register_driver(ch343_tty_driver);
