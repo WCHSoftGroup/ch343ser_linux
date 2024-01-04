@@ -1302,9 +1302,6 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 	}
 
 	newline.dwDTERate = tty_get_baud_rate(tty);
-
-	if (newline.dwDTERate == 0)
-		newline.dwDTERate = 9600;
 	ch343_get(ch343->chiptype, newline.dwDTERate, &fct, &dvs);
 
 	newline.bCharFormat = termios->c_cflag & CSTOPB ? 2 : 1;
@@ -1356,9 +1353,9 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 
 	if (C_BAUD(tty) == B0) {
 		newline.dwDTERate = ch343->line.dwDTERate;
-		newctrl &= ~CH343_CTO_D;
+		newctrl &= ~(CH343_CTO_D | CH343_CTO_R);
 	} else if (termios_old && (termios_old->c_cflag & CBAUD) == B0) {
-		newctrl |= CH343_CTO_D;
+		newctrl |= CH343_CTO_D | CH343_CTO_R;
 	}
 
 	reg_value |= CH343_L_E_R | CH343_L_E_T;
@@ -2032,7 +2029,7 @@ static int __init ch343_init(void)
 	ch343_tty_driver->flags = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV;
 #endif
 	ch343_tty_driver->init_termios = tty_std_termios;
-	ch343_tty_driver->init_termios.c_cflag = B9600 | CS8 | CREAD | HUPCL | CLOCAL;
+	ch343_tty_driver->init_termios.c_cflag = B0 | CS8 | CREAD | HUPCL | CLOCAL;
 	tty_set_operations(ch343_tty_driver, &ch343_ops);
 
 	retval = tty_register_driver(ch343_tty_driver);
