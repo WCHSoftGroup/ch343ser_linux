@@ -1302,6 +1302,8 @@ static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termi
 	}
 
 	newline.dwDTERate = tty_get_baud_rate(tty);
+	if (newline.dwDTERate == 0)
+		newline.dwDTERate = 9600;
 	ch343_get(ch343->chiptype, newline.dwDTERate, &fct, &dvs);
 
 	newline.bCharFormat = termios->c_cflag & CSTOPB ? 2 : 1;
