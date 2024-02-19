@@ -23,8 +23,9 @@
  * V1.6 - add support for non-standard baud rates above 2Mbps of chip ch347 etc.
  *      - add support for kernel version beyond 6.3.x
  *      - fix bugs when usb device disconnect
- * V1.7 - add support for kenrel version 3.3.x~3.4.x
+ * V1.7 - add support for kernel version 3.3.x~3.4.x
  *      - add support of chip ch9143
+ * V1.8 - add support for kernel version beyond 6.5.x
  */
 
 #define DEBUG
@@ -60,7 +61,7 @@
 
 #define DRIVER_AUTHOR "WCH"
 #define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.7 On 2024.01"
+#define VERSION_DESC  "V1.8 On 2024.01"
 
 #define IOCTL_MAGIC	       'W'
 #define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
@@ -845,7 +846,11 @@ static void ch343_tty_close(struct tty_struct *tty, struct file *filp)
 	tty_port_close(&ch343->port, tty, filp);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static ssize_t ch343_tty_write(struct tty_struct *tty, const u8 *buf, size_t count);
+#else
 static int ch343_tty_write(struct tty_struct *tty, const unsigned char *buf, int count)
+#endif
 {
 	struct ch343 *ch343 = tty->driver_data;
 	int stat;
@@ -1838,7 +1843,6 @@ static void stop_data_traffic(struct ch343 *ch343)
 	}
 	mutex_unlock(&ch343->mutex);
 #endif
-
 }
 
 static void ch343_disconnect(struct usb_interface *intf)
