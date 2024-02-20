@@ -1764,6 +1764,7 @@ next_desc:
 	usb_driver_claim_interface(&ch343_driver, data_interface, ch343);
 	usb_set_intfdata(data_interface, ch343);
 
+	ch343->line.dwDTERate = 9600;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0))
 	tty_dev = tty_port_register_device(&ch343->port, ch343_tty_driver, minor, &control_interface->dev);
 	if (IS_ERR(tty_dev)) {
