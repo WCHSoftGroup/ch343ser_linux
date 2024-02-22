@@ -154,6 +154,7 @@ struct ch343 {
 	int transmitting;
 	spinlock_t write_lock;
 	struct mutex mutex;
+	struct mutex proc_mutex;
 	bool disconnected;
 	struct usb_ch343_line_coding line; /* bits, stop, parity */
 	struct work_struct work;	   /* work queue entry for line discipline waking up */
@@ -171,6 +172,7 @@ struct ch343 {
 	struct usb_anchor delayed; /* writes queued for a device about to be woken */
 	unsigned long quirks;
 	u8 iface;
+	u8 num_ports;
 	struct usb_interface *io_intf;
 	CHIPTYPE chiptype;
 	bool iosupport;

@@ -41,6 +41,7 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/seq_file.h>
 #include <linux/serial.h>
 #include <linux/slab.h>
 #include <linux/tty.h>
@@ -61,7 +62,7 @@
 
 #define DRIVER_AUTHOR "WCH"
 #define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.8 On 2024.01"
+#define VERSION_DESC  "V1.8 On 2024.02"
 
 #define IOCTL_MAGIC	       'W'
 #define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
@@ -331,6 +332,7 @@ static int ch343_configure(struct ch343 *ch343)
 
 	switch (ch343->idProduct) {
 	case 0x55D2:
+		ch343->num_ports = 2;
 		if (chiptype == 0x41)
 			ch343->chiptype = CHIP_CH342K;
 		else
@@ -339,6 +341,7 @@ static int ch343_configure(struct ch343 *ch343)
 			ch343->iosupport = false;
 		break;
 	case 0x55D3:
+		ch343->num_ports = 1;
 		if (chiptype == 0x02)
 			ch343->chiptype = CHIP_CH343J;
 		else if (chiptype == 0x01)
@@ -350,12 +353,14 @@ static int ch343_configure(struct ch343 *ch343)
 		ch343->iosupport = false;
 		break;
 	case 0x55D4:
+		ch343->num_ports = 1;
 		if (chiptype == 0x09)
 			ch343->chiptype = CHIP_CH9102X;
 		else
 			ch343->chiptype = CHIP_CH9102F;
 		break;
 	case 0x55D5:
+		ch343->num_ports = 4;
 		if (chiptype == 0xC0) {
 			if ((buffer[0] & 0xF0) == 0x40)
 				ch343->chiptype = CHIP_CH344L;
@@ -365,21 +370,28 @@ static int ch343_configure(struct ch343 *ch343)
 			ch343->chiptype = CHIP_CH344Q;
 		break;
 	case 0x55D7:
+		ch343->num_ports = 2;
 		ch343->chiptype = CHIP_CH9103M;
 		break;
 	case 0x55D8:
+		ch343->num_ports = 1;
 		if (chiptype == 0x0A)
 			ch343->chiptype = CHIP_CH9101RY;
 		else
 			ch343->chiptype = CHIP_CH9101UH;
 		break;
-	case 0x55DA:
 	case 0x55DB:
 	case 0x55DD:
+		ch343->num_ports = 1;
+		ch343->chiptype = CHIP_CH347TF;
+		break;
+	case 0x55DA:
 	case 0x55DE:
+		ch343->num_ports = 2;
 		ch343->chiptype = CHIP_CH347TF;
 		break;
 	case 0x55DF:
+		ch343->num_ports = 4;
 		ch343->chiptype = CHIP_CH9104L;
 		break;
 	default:
@@ -1397,6 +1409,45 @@ static const struct tty_port_operations ch343_port_ops = {
 	.destruct = ch343_port_destruct,
 };
 
+static int ch343_proc_show(struct seq_file *m, void *v)
+{
+	struct ch343 *ch343;
+	int i;
+	char tmp[40];
+
+	seq_puts(m, "ch343serinfo:1.0 driver:1.8\n");
+	for (i = 0; i < CH343_TTY_MINORS; ++i) {
+		ch343 = ch343_get_by_index(i);
+		if (!ch343)
+			continue;
+		mutex_lock(&ch343->proc_mutex);
+		seq_printf(m, "%d:", i);
+		seq_printf(m, " module:%s", "ch343");
+		seq_printf(m, " name:\"%s\"", "usb_ch343");
+		seq_printf(m, " vendor:%04x product:%04x", le16_to_cpu(ch343->idVendor), le16_to_cpu(ch343->idProduct));
+		seq_printf(m, " num_ports:%d", ch343->num_ports);
+		seq_printf(m, " port:%d", ch343->iface);
+		usb_make_path(ch343->dev, tmp, sizeof(tmp));
+		seq_printf(m, " path:%s", tmp);
+		seq_putc(m, '\n');
+		mutex_unlock(&ch343->proc_mutex);
+	}
+	return 0;
+}
+
+static int ch343_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, ch343_proc_show, NULL);
+}
+
+static const struct file_operations ch343_proc_fops = {
+	.owner = THIS_MODULE,
+	.open = ch343_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 static void ch343_write_buffers_free(struct ch343 *ch343)
 {
 	int i;
@@ -1654,8 +1705,8 @@ next_desc:
 	if (!ch343)
 		return -ENOMEM;
 
-	ch343->idVendor = id->idVendor;
-	ch343->idProduct = id->idProduct;
+	ch343->idVendor = le16_to_cpu(id->idVendor);
+	ch343->idProduct = le16_to_cpu(id->idProduct);
 	ch343->iface = control_interface->cur_altsetting->desc.bInterfaceNumber / 2;
 
 	usb_get_intf(control_interface);
@@ -1683,6 +1734,7 @@ next_desc:
 	spin_lock_init(&ch343->write_lock);
 	spin_lock_init(&ch343->read_lock);
 	mutex_init(&ch343->mutex);
+	mutex_init(&ch343->proc_mutex);
 	ch343->rx_endpoint = usb_rcvbulkpipe(usb_dev, epread->bEndpointAddress);
 	tty_port_init(&ch343->port);
 	ch343->port.ops = &ch343_port_ops;
@@ -2015,6 +2067,11 @@ static const struct tty_operations ch343_ops = {
 	.tiocmget = ch343_tty_tiocmget,
 	.tiocmset = ch343_tty_tiocmset,
 	.get_icount = ch343_get_icount,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 18, 0))
+	.proc_fops = &ch343_proc_fops,
+#else
+	.proc_show = ch343_proc_show,
+#endif
 };
 
 static int __init ch343_init(void)
