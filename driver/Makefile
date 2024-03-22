@@ -15,7 +15,7 @@ install: default
 	insmod ch343.ko || true
 	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
 	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
-	echo "ch343\n" >> /etc/modules || true
+	@/bin/echo -e "ch343" >> /etc/modules || true
 	depmod -a
 uninstall:
 	rmmod ch343 || true

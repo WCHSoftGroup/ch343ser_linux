@@ -1,5 +1,5 @@
 /*
- * USB serial driver for USB to UART(s) chip ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc.
+ * USB serial driver for USB to UART(s) chip ch342/ch343/ch344/ch347/ch339/ch9101/ch9102/ch9103/ch9104/ch9143, etc.
  *
  * Copyright (C) 2024 Nanjing Qinheng Microelectronics Co., Ltd.
  * Web:		http://wch.cn
@@ -61,8 +61,8 @@
 #include "ch343.h"
 
 #define DRIVER_AUTHOR "WCH"
-#define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104, etc."
-#define VERSION_DESC  "V1.8 On 2024.02"
+#define DRIVER_DESC   "USB serial driver for ch342/ch343/ch344/ch347/ch339/ch9101/ch9102/ch9103/ch9104/ch9143, etc."
+#define VERSION_DESC  "V1.8 On 2024.03"
 
 #define IOCTL_MAGIC	       'W'
 #define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, u16)
@@ -87,7 +87,7 @@ static void ch343_tty_set_termios(struct tty_struct *tty, const struct ktermios 
 static void ch343_tty_set_termios(struct tty_struct *tty, struct ktermios *termios_old);
 #endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 
 /*
  * Look up an ch343 structure by minor. If found and not disconnected, increment
@@ -390,6 +390,11 @@ static int ch343_configure(struct ch343 *ch343)
 		ch343->num_ports = 2;
 		ch343->chiptype = CHIP_CH347TF;
 		break;
+	case 0x55E7:
+		ch343->num_ports = 1;
+		ch343->chiptype = CHIP_CH339W;
+		ch343->iosupport = false;
+		break;
 	case 0x55DF:
 		ch343->num_ports = 4;
 		ch343->chiptype = CHIP_CH9104L;
@@ -481,8 +486,9 @@ static void ch343_update_status(struct ch343 *ch343, unsigned char *data, size_t
 		if (data[0] != 0x00)
 			return;
 		type = data[1];
-	} else if (ch343->chiptype == CHIP_CH347TF || ch343->chiptype == CHIP_CH344Q ||
-		   ch343->chiptype == CHIP_CH344L_V2 || ch343->chiptype == CHIP_CH9104L) {
+	} else if (ch343->chiptype == CHIP_CH339W || ch343->chiptype == CHIP_CH347TF ||
+		   ch343->chiptype == CHIP_CH344Q || ch343->chiptype == CHIP_CH344L_V2 ||
+		   ch343->chiptype == CHIP_CH9104L) {
 		type = data[1];
 	}
 
@@ -790,6 +796,7 @@ static void ch343_port_destruct(struct tty_port *port)
 
 	ch343_release_minor(ch343);
 	usb_put_intf(ch343->control);
+	memset(ch343, 0x00, sizeof(struct ch343));
 	kfree(ch343);
 }
 
@@ -950,9 +957,9 @@ static int ch343_tty_break_ctl(struct tty_struct *tty, int state)
 		return -1;
 
 	if (state != 0) {
-		if ((ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) ||
-		    (ch343->chiptype == CHIP_CH344Q) || (ch343->chiptype == CHIP_CH344L_V2) ||
-		    (ch343->chiptype == CHIP_CH9104L)) {
+		if ((ch343->chiptype == CHIP_CH339W) || (ch343->chiptype == CHIP_CH347TF) ||
+		    (ch343->chiptype == CHIP_CH344L) || (ch343->chiptype == CHIP_CH344Q) ||
+		    (ch343->chiptype == CHIP_CH344L_V2) || (ch343->chiptype == CHIP_CH9104L)) {
 			regbuf[0] = ch343->iface;
 			regbuf[1] = 0x01;
 		} else {
@@ -960,9 +967,9 @@ static int ch343_tty_break_ctl(struct tty_struct *tty, int state)
 			regbuf[1] = 0x00;
 		}
 	} else {
-		if ((ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) ||
-		    (ch343->chiptype == CHIP_CH344Q) || (ch343->chiptype == CHIP_CH344L_V2) ||
-		    (ch343->chiptype == CHIP_CH9104L)) {
+		if ((ch343->chiptype == CHIP_CH339W) || (ch343->chiptype == CHIP_CH347TF) ||
+		    (ch343->chiptype == CHIP_CH344L) || (ch343->chiptype == CHIP_CH344Q) ||
+		    (ch343->chiptype == CHIP_CH344L_V2) || (ch343->chiptype == CHIP_CH9104L)) {
 			regbuf[0] = ch343->iface;
 			regbuf[1] = 0x00;
 		} else {
@@ -972,8 +979,9 @@ static int ch343_tty_break_ctl(struct tty_struct *tty, int state)
 	}
 	reg_contents = get_unaligned_le16(regbuf);
 
-	if ((ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) || (ch343->chiptype == CHIP_CH344Q) ||
-	    (ch343->chiptype == CHIP_CH344L_V2) || (ch343->chiptype == CHIP_CH9104L)) {
+	if ((ch343->chiptype == CHIP_CH339W) || (ch343->chiptype == CHIP_CH347TF) || (ch343->chiptype == CHIP_CH344L) ||
+	    (ch343->chiptype == CHIP_CH344Q) || (ch343->chiptype == CHIP_CH344L_V2) ||
+	    (ch343->chiptype == CHIP_CH9104L)) {
 		retval = ch343_control_out(ch343, CMD_C4, reg_contents, 0x00);
 	} else {
 		if (ch343->iface)
@@ -1234,7 +1242,7 @@ static int ch343_tty_ioctl(struct tty_struct *tty, unsigned int cmd, unsigned lo
 	}
 out:
 	kfree(buffer);
-	return rv < 0 ? rv : 0;
+	return rv;
 }
 
 static int ch343_get(CHIPTYPE chiptype, unsigned int bval, unsigned char *fct, unsigned char *dvs)
@@ -1243,7 +1251,8 @@ static int ch343_get(CHIPTYPE chiptype, unsigned int bval, unsigned char *fct, u
 	unsigned char b;
 	unsigned long c;
 
-	if (((chiptype == CHIP_CH347TF) || (chiptype == CHIP_CH344Q) || (chiptype == CHIP_CH9104L)) &&
+	if ((chiptype == CHIP_CH339W || chiptype == CHIP_CH347TF || chiptype == CHIP_CH344Q ||
+	     chiptype == CHIP_CH9104L) &&
 	    bval >= 2000000) {
 		*fct = (unsigned char)(bval / 200);
 		*dvs = (unsigned char)((bval / 200) >> 8);
@@ -1506,9 +1515,8 @@ static int ch343_open(struct inode *inode, struct file *file)
 		retval = -ENODEV;
 		goto exit;
 	}
-
+	
 	file->private_data = ch343;
-
 exit:
 	return retval;
 }
@@ -1518,7 +1526,7 @@ static int ch343_release(struct inode *inode, struct file *file)
 	struct ch343 *ch343;
 
 	ch343 = file->private_data;
-	if (ch343 == NULL)
+	if (ch343 == NULL || ch343->io_id != IOID)
 		return -ENODEV;
 
 	return 0;
@@ -1533,7 +1541,7 @@ static long ch343_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	u32 __user *argval = (u32 __user *)arg;
 
 	ch343 = file->private_data;
-	if (ch343 == NULL)
+	if (ch343 == NULL || ch343->io_id != IOID)
 		return -ENODEV;
 
 	buffer = kmalloc(512, GFP_KERNEL);
@@ -1808,6 +1816,7 @@ next_desc:
 			/* error when registering this driver */
 			dev_err(&intf->dev, "Not able to get a minor for this device.\n");
 		} else {
+			ch343->io_id = IOID;
 			ch343->io_intf = intf;
 			dev_info(&intf->dev, "USB to GPIO device now attached to ch343_iodev%d\n", intf->minor);
 		}
@@ -2024,6 +2033,7 @@ static const struct usb_device_id ch343_ids[] = {
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55dd, 0x00) }, /* ch347t chip mode3*/
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x00) }, /* ch347f chip uart0*/
 	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55de, 0x02) }, /* ch347f chip uart1*/
+	{ USB_DEVICE_INTERFACE_NUMBER(0x1a86, 0x55e7, 0x00) }, /* ch339w chip */
 	{ USB_DEVICE(0x1a86, 0x55d8) },			       /* ch9101 chip */
 	{ USB_DEVICE(0x1a86, 0x55d4) },			       /* ch9102 chip */
 	{ USB_DEVICE(0x1a86, 0x55d7) },			       /* ch9103 chip */
@@ -2132,7 +2142,9 @@ static void __exit ch343_exit(void)
 #else
 	put_tty_driver(ch343_tty_driver);
 #endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0))
 	idr_destroy(&ch343_minors);
+#endif
 	printk(KERN_INFO KBUILD_MODNAME ": "
 					"ch343 driver exit.\n");
 }

@@ -26,6 +26,8 @@ typedef enum {
 	CHIP_CH9102X,
 	CHIP_CH9103M,
 	CHIP_CH9104L,
+	CHIP_CH340B,
+	CHIP_CH339W,
 } CHIPTYPE;
 
 /**
@@ -74,8 +76,8 @@ extern int libch343_get_uartindex(int fd, uint8_t *index);
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_control_msg_in(int fd, uint8_t request, uint8_t requesttype, uint16_t value, uint16_t index, uint8_t *data,
-			    uint16_t size);
+extern int libch343_control_msg_in(int fd, uint8_t request, uint8_t requesttype, uint16_t value, uint16_t index,
+				   uint8_t *data, uint16_t size);
 /**
  * libch343_control_msg_out - control trasfer out
  * @fd: file descriptor of ch343 tty device or gpio device
@@ -89,7 +91,7 @@ extern int libch343_control_msg_in(int fd, uint8_t request, uint8_t requesttype,
  * The function return 0 if success, others if fail.
  */
 extern int libch343_control_msg_out(int fd, uint8_t request, uint8_t requesttype, uint16_t value, uint16_t index,
-			     uint8_t *data, uint16_t size);
+				    uint8_t *data, uint16_t size);
 
 /**
  * libch343_gpioinfo - get gpio status
