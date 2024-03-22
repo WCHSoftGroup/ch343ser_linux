@@ -82,6 +82,8 @@
 #define CH343_NW 2
 #define CH343_NR 2
 
+#define IOID 0x13572468
+
 struct ch343_wb {
 	unsigned char *buf;
 	dma_addr_t dmah;
@@ -133,6 +135,8 @@ typedef enum {
 	CHIP_CH9102X,
 	CHIP_CH9103M,
 	CHIP_CH9104L,
+	CHIP_CH340B,
+	CHIP_CH339W,
 } CHIPTYPE;
 
 struct ch343 {
@@ -174,11 +178,13 @@ struct ch343 {
 	u8 iface;
 	u8 num_ports;
 	struct usb_interface *io_intf;
+	struct kref kref;
 	CHIPTYPE chiptype;
 	bool iosupport;
 	u16 idVendor;
 	u16 idProduct;
 	u8 gpio5dir;
+	u32 io_id;
 };
 
 #define CDC_DATA_INTERFACE_TYPE 0x0a
