@@ -866,7 +866,7 @@ static void ch343_tty_close(struct tty_struct *tty, struct file *filp)
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
-static ssize_t ch343_tty_write(struct tty_struct *tty, const u8 *buf, size_t count);
+static ssize_t ch343_tty_write(struct tty_struct *tty, const u8 *buf, size_t count)
 #else
 static int ch343_tty_write(struct tty_struct *tty, const unsigned char *buf, int count)
 #endif
