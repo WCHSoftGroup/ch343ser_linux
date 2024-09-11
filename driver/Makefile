@@ -3,9 +3,10 @@ CONFIG_MODULE_SIG=n
 ifeq ($(KERNELRELEASE), )
 DESTDIR ?= /
 SCRIPLET ?= yes
+PREFIX ?= /usr
 KERNELRELEASE ?= $(shell uname -r)
-KERNELDIR ?= /lib/modules/$(KERNELRELEASE)/build
-KERNELDESTDIR ?= $(DESTDIR)/lib/modules/$(KERNELRELEASE)/kernel/drivers/usb/serial
+KERNELDIR ?= /$(PREFIX)/lib/modules/$(KERNELRELEASE)/build
+KERNELDESTDIR ?= $(DESTDIR)/$(PREFIX)/lib/modules/$(KERNELRELEASE)/kernel/drivers/usb/serial
 PWD ?= $(shell pwd)
 default:
 	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
