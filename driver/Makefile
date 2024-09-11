@@ -7,11 +7,11 @@ PREFIX ?= /usr
 KERNELRELEASE ?= $(shell uname -r)
 KERNELDIR ?= /$(PREFIX)/lib/modules/$(KERNELRELEASE)/build
 KERNELDESTDIR ?= $(DESTDIR)/$(PREFIX)/lib/modules/$(KERNELRELEASE)/kernel/drivers/usb/serial
-PWD ?= $(shell pwd)
+WORKDIR ?= $(shell pwd)
 default:
-	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
+	$(MAKE) -C $(KERNELDIR)  M="$(WORKDIR)"  
 clean:
-	rm -rf *.mk .tmp_versions Module.symvers *.mod.c *.o *.ko .*.cmd Module.markers modules.order *.a *.mod
+	rm -rf "$(WORKDIR)/"*.mk "$(WORKDIR)/".tmp_versions "$(WORKDIR)/"Module.symvers "$(WORKDIR)/"*.mod.c "$(WORKDIR)/"*.o "$(WORKDIR)/"*.ko "$(WORKDIR)/".*.cmd "$(WORKDIR)/"Module.markers "$(WORKDIR)/"modules.order "$(WORKDIR)/"*.a "$(WORKDIR)/"*.mod
 load:
 	insmod ch343.ko
 unload:
@@ -19,7 +19,7 @@ unload:
 install: default
 	insmod ch343.ko || true
 	mkdir -p $(KERNELDESTDIR) || true
-	cp -f ./ch343.ko $(KERNELDESTDIR) || true
+	cp -f "$(WORKDIR)/"ch343.ko $(KERNELDESTDIR) || true
 ifeq ($(SCRIPLET),yes)
 	@/bin/echo -e "ch343" >> /etc/modules || true
 	depmod -a
