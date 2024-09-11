@@ -1,6 +1,4 @@
 CONFIG_MODULE_SIG=n
-
-ifeq ($(KERNELRELEASE), )
 DESTDIR ?= /
 SCRIPLET ?= yes
 PREFIX ?= /usr
@@ -11,7 +9,7 @@ WORKDIR ?= $(shell pwd)
 build:
 	mkdir -pv "$(WORKDIR)" || true
 	cp *.c *.h Makefile "$(WORKDIR)/" || true
-	$(MAKE) -C $(KERNELDIR)  M="$(WORKDIR)"
+	"$(MAKE)" -C "$(KERNELDIR)"  M="$(WORKDIR)"
 clean:
 	rm -rf "$(WORKDIR)/"*.mk "$(WORKDIR)/".tmp_versions "$(WORKDIR)/"Module.symvers "$(WORKDIR)/"*.mod.c "$(WORKDIR)/"*.o "$(WORKDIR)/"*.ko "$(WORKDIR)/".*.cmd "$(WORKDIR)/"Module.markers "$(WORKDIR)/"modules.order "$(WORKDIR)/"*.a "$(WORKDIR)/"*.mod
 load:
@@ -19,7 +17,9 @@ load:
 unload:
 	rmmod ch343
 install:
+ifeq ($(SCRIPLET),yes)
 	insmod ch343.ko || true
+endif
 	mkdir -p $(KERNELDESTDIR) || true
 	cp -f "$(WORKDIR)/"ch343.ko $(KERNELDESTDIR) || true
 ifeq ($(SCRIPLET),yes)
@@ -32,7 +32,3 @@ ifeq ($(SCRIPLET),yes)
 	rmmod ch343 || true
 	depmod -a
 endif
-else
-	obj-m := ch343.o
-endif
-
