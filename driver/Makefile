@@ -1,26 +1,34 @@
 CONFIG_MODULE_SIG=n
-
-ifeq ($(KERNELRELEASE), )
-KERNELDIR := /lib/modules/$(shell uname -r)/build
-PWD := $(shell pwd)
-default:
-	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
+DESTDIR ?= /
+SCRIPLET ?= yes
+PREFIX ?= /usr
+KERNELRELEASE ?= $(shell uname -r)
+KERNELDIR ?= /$(PREFIX)/lib/modules/$(KERNELRELEASE)/build
+KERNELDESTDIR ?= $(DESTDIR)/$(PREFIX)/lib/modules/$(KERNELRELEASE)/kernel/drivers/usb/serial
+WORKDIR ?= $(shell pwd)
+build:
+	mkdir -pv "$(WORKDIR)" || true
+	cp *.c *.h Makefile "$(WORKDIR)/" || true
+	"$(MAKE)" -C "$(KERNELDIR)"  M="$(WORKDIR)"
 clean:
-	rm -rf *.mk .tmp_versions Module.symvers *.mod.c *.o *.ko .*.cmd Module.markers modules.order *.a *.mod
+	rm -rf "$(WORKDIR)/"*.mk "$(WORKDIR)/".tmp_versions "$(WORKDIR)/"Module.symvers "$(WORKDIR)/"*.mod.c "$(WORKDIR)/"*.o "$(WORKDIR)/"*.ko "$(WORKDIR)/".*.cmd "$(WORKDIR)/"Module.markers "$(WORKDIR)/"modules.order "$(WORKDIR)/"*.a "$(WORKDIR)/"*.mod
 load:
 	insmod ch343.ko
 unload:
 	rmmod ch343
-install: default
+install:
+ifeq ($(SCRIPLET),yes)
 	insmod ch343.ko || true
-	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
-	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
+endif
+	mkdir -p $(KERNELDESTDIR) || true
+	cp -f "$(WORKDIR)/"ch343.ko $(KERNELDESTDIR) || true
+ifeq ($(SCRIPLET),yes)
 	@/bin/echo -e "ch343" >> /etc/modules || true
 	depmod -a
+endif
 uninstall:
+	rm -rf $(KERNELDESTDIR)/ch343.ko || true
+ifeq ($(SCRIPLET),yes)
 	rmmod ch343 || true
-	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/ch343.ko || true
 	depmod -a
-else
-	obj-m := ch343.o
 endif
