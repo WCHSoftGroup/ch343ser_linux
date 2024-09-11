@@ -1,8 +1,11 @@
 CONFIG_MODULE_SIG=n
 
 ifeq ($(KERNELRELEASE), )
-KERNELDIR := /lib/modules/$(shell uname -r)/build
-PWD := $(shell pwd)
+DESTDIR ?= /
+KERNELRELEASE ?= $(shell uname -r)
+KERNELDIR ?= /lib/modules/$(KERNELRELEASE)/build
+KERNELDESTDIR ?= $(DESTDIR)/lib/modules/$(KERNELRELEASE)/kernel/drivers/usb/serial
+PWD ?= $(shell pwd)
 default:
 	$(MAKE) -C $(KERNELDIR)  M=$(PWD)  
 clean:
@@ -13,13 +16,13 @@ unload:
 	rmmod ch343
 install: default
 	insmod ch343.ko || true
-	mkdir -p /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
-	cp -f ./ch343.ko /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial || true
+	mkdir -p $(KERNELDESTDIR) || true
+	cp -f ./ch343.ko $(KERNELDESTDIR) || true
 	@/bin/echo -e "ch343" >> /etc/modules || true
 	depmod -a
 uninstall:
 	rmmod ch343 || true
-	rm -rf /lib/modules/$(shell uname -r)/kernel/drivers/usb/serial/ch343.ko || true
+	rm -rf $(KERNELDESTDIR)/ch343.ko || true
 	depmod -a
 else
 	obj-m := ch343.o
