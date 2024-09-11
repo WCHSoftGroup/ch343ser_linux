@@ -1,1 +1,0 @@
-savedcmd_/extra/home/suse/Desktop/local/gitfetch/ch343ser_linux/driver/dir/ch343.mod := printf '%s\n'   ch343.o | awk '!x[$$0]++ { print("/extra/home/suse/Desktop/local/gitfetch/ch343ser_linux/driver/dir/"$$0) }' > /extra/home/suse/Desktop/local/gitfetch/ch343ser_linux/driver/dir/ch343.mod
