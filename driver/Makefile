@@ -19,16 +19,16 @@ install: default
 	insmod ch343.ko || true
 	mkdir -p $(KERNELDESTDIR) || true
 	cp -f ./ch343.ko $(KERNELDESTDIR) || true
-	ifeq ($(SCRIPLET),yes)
+ifeq ($(SCRIPLET),yes)
 	@/bin/echo -e "ch343" >> /etc/modules || true
 	depmod -a
-	endif
+endif
 uninstall:
 	rm -rf $(KERNELDESTDIR)/ch343.ko || true
-	ifeq ($(SCRIPLET),yes)
+ifeq ($(SCRIPLET),yes)
 	rmmod ch343 || true
 	depmod -a
-	endif
+endif
 else
 	obj-m := ch343.o
 endif
