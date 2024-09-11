@@ -16,9 +16,11 @@ clean:
 	rm -rf "$(WORKDIR)/"*.mk "$(WORKDIR)/".tmp_versions "$(WORKDIR)/"Module.symvers "$(WORKDIR)/"*.mod.c "$(WORKDIR)/"*.o "$(WORKDIR)/"*.ko "$(WORKDIR)/".*.cmd "$(WORKDIR)/"Module.markers "$(WORKDIR)/"modules.order "$(WORKDIR)/"*.a "$(WORKDIR)/"*.mod
 load:
 	insmod ch343.ko
+modules.order:
+	echo f
 unload:
 	rmmod ch343
-install:
+install: default
 	insmod ch343.ko || true
 	mkdir -p $(KERNELDESTDIR) || true
 	cp -f "$(WORKDIR)/"ch343.ko $(KERNELDESTDIR) || true
