@@ -1,13 +1,13 @@
 # ch343 linux serial driver
 ## Description
 
-USB to UART(s) chip ch342/ch343/ch344/ch347/ch9101/ch9102/ch9103/ch9104 are fully compliant to the  Communications Device Class (CDC) standard, they will work with a standard CDC-ACM driver (CDC - Abstract Control Model). Linux operating systems supply a default CDC-ACM driver that can be used with these USB UART devices. In Linux, this driver file name is cdc-acm.
+USB to UART(s) chip ch342/ch343/ch344/ch346/ch347/ch9101/ch9102/ch9103/ch9104/ch9111/ch9114 are fully compliant to the  Communications Device Class (CDC) standard, they will work with a standard CDC-ACM driver (CDC - Abstract Control Model). Linux operating systems supply a default CDC-ACM driver that can be used with these USB UART devices. In Linux, this driver file name is cdc-acm.
 
 The CDC-ACM driver has limited capabilities to control specific devices. This generic driver does not have any knowledge about specific device protocols. Because of this, device manufacturers can create an alternate, or custom driver that is capable of accessing the device specific function sets, such as hardware flow control or GPIO functions.
 
 If you use this VCP driver, please check that the CDC-ACM driver was not installed for the USB UART devices mentioned above. You can use command "ls /dev/ttyACM*" to confirm that, to remove the CDC-ACM driver, use command "rmmod cdc-acm".
 
-This driver supports USB to single serial port chip ch343/ch347/ch9101/ch9102, USB to dual serial ports chip ch342/ch347/ch9103, USB to quad serial ports chip ch344, ch9104, etc.
+This driver supports USB to single serial port chip ch343/ch346/ch347/ch9101/ch9102/ch9111, USB to dual serial ports chip ch342/ch346/ch347/ch9103, USB to quad serial ports chip ch344, ch9104, ch9114, etc.
 
 1. Open "Terminal"
 2. Switch to "driver" directory

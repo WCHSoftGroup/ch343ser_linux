@@ -3,14 +3,6 @@
 
 typedef struct _ch34x CH34X;
 
-#define ERROR_CODE1 1 /* initial error */
-#define ERROR_CODE2 2 /* write the default parameters to device error */
-#define ERROR_CODE3 3 /* read eeprom data error */
-#define ERROR_CODE4 4 /* ch9344 read eeprom data error */
-#define ERROR_CODE5 5 /* write the parameters of CONFIG.INI file to device error */
-#define ERROR_CODE6 6 /* chip cannot be configured */
-#define ERROR_CODE7 7 /* chip configuration is not activated and needs to be written */
-
 /**
  * ch34x_cfg_alloc -- alloc CH34X structure
  * @devname: ch343 tty device or gpio device name
