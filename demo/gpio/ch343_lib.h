@@ -1,13 +1,19 @@
+/*
+ *
+ * Includes for ch343_lib.c
+ *
+ */
+
 #ifndef _CH343_LIB_H
 #define _CH343_LIB_H
 
 #include <stdint.h>
 
-#define IOCTL_MAGIC	       'W'
-#define IOCTL_CMD_GETCHIPTYPE  _IOR(IOCTL_MAGIC, 0x84, uint16_t)
+#define IOCTL_MAGIC 'W'
+#define IOCTL_CMD_GETCHIPTYPE _IOR(IOCTL_MAGIC, 0x84, uint16_t)
 #define IOCTL_CMD_GETUARTINDEX _IOR(IOCTL_MAGIC, 0x85, uint16_t)
-#define IOCTL_CMD_CTRLIN       _IOWR(IOCTL_MAGIC, 0x90, uint16_t)
-#define IOCTL_CMD_CTRLOUT      _IOW(IOCTL_MAGIC, 0x91, uint16_t)
+#define IOCTL_CMD_CTRLIN _IOWR(IOCTL_MAGIC, 0x90, uint16_t)
+#define IOCTL_CMD_CTRLOUT _IOW(IOCTL_MAGIC, 0x91, uint16_t)
 
 typedef enum {
 	CHIP_CH342F = 0x00,
@@ -28,6 +34,14 @@ typedef enum {
 	CHIP_CH9104L,
 	CHIP_CH340B,
 	CHIP_CH339W,
+	CHIP_CH9111L_M0,
+	CHIP_CH9111L_M1,
+	CHIP_CH9114L,
+	CHIP_CH9114W,
+	CHIP_CH9114F,
+	CHIP_CH346C_M0,
+	CHIP_CH346C_M1,
+	CHIP_CH346C_M2,
 } CHIPTYPE;
 
 /**
@@ -76,8 +90,10 @@ extern int libch343_get_uartindex(int fd, uint8_t *index);
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_control_msg_in(int fd, uint8_t request, uint8_t requesttype, uint16_t value, uint16_t index,
-				   uint8_t *data, uint16_t size);
+extern int libch343_control_msg_in(int fd, uint8_t request,
+				   uint8_t requesttype, uint16_t value,
+				   uint16_t index, uint8_t *data,
+				   uint16_t size);
 /**
  * libch343_control_msg_out - control trasfer out
  * @fd: file descriptor of ch343 tty device or gpio device
@@ -90,8 +106,10 @@ extern int libch343_control_msg_in(int fd, uint8_t request, uint8_t requesttype,
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_control_msg_out(int fd, uint8_t request, uint8_t requesttype, uint16_t value, uint16_t index,
-				    uint8_t *data, uint16_t size);
+extern int libch343_control_msg_out(int fd, uint8_t request,
+				    uint8_t requesttype, uint16_t value,
+				    uint16_t index, uint8_t *data,
+				    uint16_t size);
 
 /**
  * libch343_gpioinfo - get gpio status
@@ -102,7 +120,8 @@ extern int libch343_control_msg_out(int fd, uint8_t request, uint8_t requesttype
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_gpioinfo(int fd, uint32_t *enablebits, uint32_t *gpiodirbits, uint32_t *gpioval);
+extern int libch343_gpioinfo(int fd, uint32_t *enablebits,
+			     uint32_t *gpiodirbits, uint32_t *gpioval);
 
 /**
  * libch343_gpioenable - gpio enable
@@ -112,7 +131,8 @@ extern int libch343_gpioinfo(int fd, uint32_t *enablebits, uint32_t *gpiodirbits
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_gpioenable(int fd, uint32_t enablebits, uint32_t gpiodirbits);
+extern int libch343_gpioenable(int fd, uint32_t enablebits,
+			       uint32_t gpiodirbits);
 
 /**
  * libch343_gpioset - gpio output
@@ -122,7 +142,8 @@ extern int libch343_gpioenable(int fd, uint32_t enablebits, uint32_t gpiodirbits
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_gpioset(int fd, uint32_t gpiobits, uint32_t gpiolevelbits);
+extern int libch343_gpioset(int fd, uint32_t gpiobits,
+			    uint32_t gpiolevelbits);
 
 /**
  * libch343_gpioget - get gpio input
@@ -170,7 +191,8 @@ extern int libch343_eeprom_write_byte(int fd, uint8_t offset, uint8_t val);
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_eeprom_read_area(int fd, uint8_t offset, uint8_t *data, uint8_t size);
+extern int libch343_eeprom_read_area(int fd, uint8_t offset, uint8_t *data,
+				     uint8_t size);
 
 /**
  * libch343_eeprom_write_area - write bytes to eeprom area
@@ -181,6 +203,7 @@ extern int libch343_eeprom_read_area(int fd, uint8_t offset, uint8_t *data, uint
  *
  * The function return 0 if success, others if fail.
  */
-extern int libch343_eeprom_write_area(int fd, uint8_t offset, uint8_t *data, uint8_t size);
+extern int libch343_eeprom_write_area(int fd, uint8_t offset,
+				      uint8_t *data, uint8_t size);
 
 #endif
