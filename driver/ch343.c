@@ -29,6 +29,9 @@
  *      - add support of chip ch9143
  * V1.8 - add support for kernel version beyond 6.5.x
  * V1.9 - add support of chip ch9111, ch9114 and ch346
+ * V2.0 - set default termios baudrate to B115200
+ *      - fix issue of automatically sending data upon opening tty
+ *        for the first time on some systems
  */
 
 #define DEBUG
@@ -67,7 +70,7 @@
 #define DRIVER_DESC                                                  \
 	"USB serial driver for ch342/ch343/ch344/ch346/ch347/ch339/" \
 	"ch9101/ch9102/ch9103/ch9104/ch9143, etc."
-#define VERSION_DESC "V1.9 On 2025.01"
+#define VERSION_DESC "V2.0 On 2025.04"
 
 #define IOCTL_MAGIC 'W'
 
@@ -798,6 +801,9 @@ static int ch343_tty_open(struct tty_struct *tty, struct file *filp)
 {
 	struct ch343 *ch343 = tty->driver_data;
 
+	if (tty)
+		ch343_tty_set_termios(tty, NULL);
+
 	return tty_port_open(&ch343->port, tty, filp);
 }
 
@@ -841,10 +847,6 @@ static int ch343_port_activate(struct tty_port *port,
 
 	set_bit(TTY_NO_WRITE_SPLIT, &tty->flags);
 	ch343->control->needs_remote_wakeup = 1;
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0))
-	ch343_tty_set_termios(tty, NULL);
-#endif
 
 	retval = usb_submit_urb(ch343->ctrlurb, GFP_KERNEL);
 	if (retval) {
@@ -1678,6 +1680,8 @@ static void ch343_tty_set_termios(struct tty_struct *tty,
 
 	if (newctrl != ch343->ctrlout)
 		ch343_set_control(ch343, ch343->ctrlout = newctrl);
+
+	tty_encode_baud_rate(tty, newline.dwDTERate, newline.dwDTERate);
 }
 
 static const struct tty_port_operations ch343_port_ops = {
@@ -2469,8 +2473,12 @@ static int __init ch343_init(void)
 				  TTY_DRIVER_DYNAMIC_DEV;
 #endif
 	ch343_tty_driver->init_termios = tty_std_termios;
-	ch343_tty_driver->init_termios.c_cflag = B200 | CS8 | CREAD |
+	ch343_tty_driver->init_termios.c_cflag = B115200 | CS8 | CREAD |
 						 HUPCL | CLOCAL;
+	ch343_tty_driver->init_termios.c_lflag &=
+		~(ECHO | ECHONL | ICANON | ISIG);
+	ch343_tty_driver->init_termios.c_oflag &= ~OPOST;
+
 	tty_set_operations(ch343_tty_driver, &ch343_ops);
 
 	retval = tty_register_driver(ch343_tty_driver);
