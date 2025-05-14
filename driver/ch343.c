@@ -1697,7 +1697,7 @@ static int ch343_proc_show(struct seq_file *m, void *v)
 	int i;
 	char tmp[40];
 
-	seq_puts(m, "ch343serinfo:1.0 driver:1.8\n");
+	seq_printf(m, "ch343serinfo:1.0 driver:%s\n", VERSION_DESC);
 	for (i = 0; i < CH343_TTY_MINORS; ++i) {
 		ch343 = ch343_get_by_index(i);
 		if (!ch343)
