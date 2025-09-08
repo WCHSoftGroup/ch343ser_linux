@@ -74,7 +74,7 @@
 #define DRIVER_DESC                                                  \
 	"USB serial driver for ch342/ch343/ch344/ch346/ch347/ch339/" \
 	"ch9101/ch9102/ch9103/ch9104/ch9143, etc."
-#define VERSION_DESC "V2.0 On 2025.04"
+#define VERSION_DESC "V2.0 On 2025.09"
 
 #define IOCTL_MAGIC 'W'
 
@@ -1708,7 +1708,7 @@ static int ch343_proc_show(struct seq_file *m, void *v)
 	int i;
 	char tmp[40];
 
-	seq_puts(m, "ch343serinfo:1.0 driver:1.8\n");
+	seq_printf(m, "ch343serinfo:1.0 driver:%s\n", VERSION_DESC);
 	for (i = 0; i < CH343_TTY_MINORS; ++i) {
 		ch343 = ch343_get_by_index(i);
 		if (!ch343)
