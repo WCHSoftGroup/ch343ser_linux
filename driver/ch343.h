@@ -64,6 +64,7 @@
 #define CH343_CTT_F 0x44
 #define CH343_CTT_P 0x04
 #define CH343_CTT_O 0x02
+#define CH343_CTT_B 0x01
 
 #define CH343_LO 0x02
 #define CH343_LE 0x04
